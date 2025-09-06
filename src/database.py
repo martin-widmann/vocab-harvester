@@ -47,6 +47,20 @@ def init_database():
         )
     """)
     
+    # Create temporary processing database table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS temp_vocab (
+            word TEXT NOT NULL,
+            lemma TEXT NOT NULL,
+            pos TEXT,
+            translation TEXT,
+            is_regular BOOLEAN,
+            session_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (word, session_id)
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
@@ -224,6 +238,91 @@ def delete_tag(tag_name):
     except sqlite3.Error as e:
         print(f"Database error: {e}")
         return False
+
+# Temporary database management functions
+def add_temp_word(word, lemma, pos, translation, is_regular, session_id):
+    """Add a word to temporary processing database."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO temp_vocab 
+                (word, lemma, pos, translation, is_regular, session_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (word, lemma, pos, translation, is_regular, session_id))
+            conn.commit()
+            return True
+    except sqlite3.Error as e:
+        print(f"Database error adding temp word: {e}")
+        return False
+
+
+def get_temp_words(session_id=None):
+    """Get all words from temporary database, optionally filtered by session."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            if session_id:
+                cursor.execute("""
+                    SELECT word, lemma, pos, translation, is_regular, session_id, created_at
+                    FROM temp_vocab WHERE session_id = ?
+                    ORDER BY created_at
+                """, (session_id,))
+            else:
+                cursor.execute("""
+                    SELECT word, lemma, pos, translation, is_regular, session_id, created_at
+                    FROM temp_vocab ORDER BY created_at
+                """)
+            return cursor.fetchall()
+    except sqlite3.Error as e:
+        print(f"Database error getting temp words: {e}")
+        return []
+
+
+def remove_temp_word(word, session_id):
+    """Remove a specific word from temporary database."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM temp_vocab WHERE word = ? AND session_id = ?
+            """, (word, session_id))
+            conn.commit()
+            return cursor.rowcount > 0
+    except sqlite3.Error as e:
+        print(f"Database error removing temp word: {e}")
+        return False
+
+
+def clear_temp_session(session_id):
+    """Remove all words from a specific session."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM temp_vocab WHERE session_id = ?
+            """, (session_id,))
+            conn.commit()
+            print(f"Cleared session '{session_id}' - {cursor.rowcount} words removed")
+            return cursor.rowcount
+    except sqlite3.Error as e:
+        print(f"Database error clearing session: {e}")
+        return 0
+
+
+def temp_word_exists(word, session_id):
+    """Check if a word exists in temporary database for a specific session."""
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT word FROM temp_vocab WHERE word = ? AND session_id = ?
+            """, (word, session_id))
+            return cursor.fetchone() is not None
+    except sqlite3.Error as e:
+        print(f"Database error checking temp word existence: {e}")
+        return False
+
 
 # Initialize database when this module is imported
 init_database()
