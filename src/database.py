@@ -22,7 +22,8 @@ def init_database():
         CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
             word TEXT PRIMARY KEY,
             pos TEXT,
-            is_regular BOOLEAN
+            is_regular BOOLEAN,
+            translation TEXT
         )
     """)
     
@@ -58,7 +59,7 @@ def word_exists(word):
     conn.close()
     return exists
 
-def add_word(word, pos, is_regular):
+def add_word(word, pos, is_regular, translation=None):
     """Insert a new word into the database safely."""
     if word_exists(word):
         print(f"'{word}' already exists in the database. Skipping.")
@@ -68,9 +69,9 @@ def add_word(word, pos, is_regular):
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute(f"""
-                INSERT INTO {TABLE_NAME} (word, pos, is_regular)
-                VALUES (?, ?, ?)
-            """, (word, pos, is_regular))
+                INSERT INTO {TABLE_NAME} (word, pos, is_regular, translation)
+                VALUES (?, ?, ?, ?)
+            """, (word, pos, is_regular, translation))
             conn.commit()
             print(f"Added '{word}' to the database.")
     except sqlite3.Error as e:
