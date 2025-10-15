@@ -246,7 +246,7 @@ def add_temp_word(word, lemma, pos, translation, is_regular, session_id):
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO temp_vocab 
+                INSERT OR REPLACE INTO temp_vocab
                 (word, lemma, pos, translation, is_regular, session_id)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (word, lemma, pos, translation, is_regular, session_id))
@@ -322,6 +322,151 @@ def temp_word_exists(word, session_id):
     except sqlite3.Error as e:
         print(f"Database error checking temp word existence: {e}")
         return False
+
+
+# Word approval workflow functions
+def approve_word(lemma, session_id, tags=None):
+    """
+    Approve a word from temporary database and move it to main vocabulary.
+
+    Args:
+        lemma: The lemmatized word to approve
+        session_id: The session ID where the word is stored
+        tags: Optional list of tag names to assign to the word
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            # Find the word in temp database
+            cursor.execute("""
+                SELECT word, lemma, pos, translation, is_regular
+                FROM temp_vocab
+                WHERE lemma = ? AND session_id = ?
+                LIMIT 1
+            """, (lemma, session_id))
+
+            temp_word = cursor.fetchone()
+            if not temp_word:
+                print(f"Word '{lemma}' not found in session '{session_id}'")
+                return False
+
+            word, lemma_found, pos, translation, is_regular = temp_word
+
+            # Check if word already exists in main database
+            cursor.execute(f"SELECT word FROM {TABLE_NAME} WHERE word = ?", (lemma_found,))
+            if cursor.fetchone():
+                print(f"Word '{lemma_found}' already exists in main database")
+                # Remove from temp even if already exists
+                cursor.execute("""
+                    DELETE FROM temp_vocab WHERE lemma = ? AND session_id = ?
+                """, (lemma, session_id))
+                conn.commit()
+                return False
+
+            # Insert word into main database
+            cursor.execute(f"""
+                INSERT INTO {TABLE_NAME} (word, pos, is_regular, translation)
+                VALUES (?, ?, ?, ?)
+            """, (lemma_found, pos, is_regular, translation))
+
+            # Add tags if provided
+            if tags:
+                for tag_name in tags:
+                    # Get or create tag
+                    cursor.execute("SELECT tag_id FROM tags WHERE tag_name = ?", (tag_name,))
+                    result = cursor.fetchone()
+
+                    if result:
+                        tag_id = result[0]
+                    else:
+                        # Create new tag
+                        cursor.execute("""
+                            INSERT INTO tags (tag_name, description)
+                            VALUES (?, NULL)
+                        """, (tag_name,))
+                        tag_id = cursor.lastrowid
+
+                    # Add tag association
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO word_tags (word, tag_id)
+                        VALUES (?, ?)
+                    """, (lemma_found, tag_id))
+
+            # Remove from temporary database
+            cursor.execute("""
+                DELETE FROM temp_vocab WHERE lemma = ? AND session_id = ?
+            """, (lemma, session_id))
+
+            conn.commit()
+            print(f"Approved word '{lemma_found}' and moved to main database")
+            return True
+
+    except sqlite3.Error as e:
+        print(f"Database error approving word: {e}")
+        return False
+
+
+def reject_word(lemma, session_id):
+    """
+    Reject a word and remove it from temporary database.
+
+    Args:
+        lemma: The lemmatized word to reject
+        session_id: The session ID where the word is stored
+
+    Returns:
+        bool: True if word was removed, False otherwise
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM temp_vocab WHERE lemma = ? AND session_id = ?
+            """, (lemma, session_id))
+            conn.commit()
+
+            if cursor.rowcount > 0:
+                print(f"Rejected word '{lemma}' from session '{session_id}'")
+                return True
+            else:
+                print(f"Word '{lemma}' not found in session '{session_id}'")
+                return False
+
+    except sqlite3.Error as e:
+        print(f"Database error rejecting word: {e}")
+        return False
+
+
+def get_pending_words(session_id=None):
+    """
+    Get all words awaiting approval from temporary database.
+
+    Args:
+        session_id: Optional session ID to filter by specific session
+
+    Returns:
+        list: List of tuples (word, lemma, pos, translation, is_regular, session_id, created_at)
+    """
+    # This is an alias for get_temp_words for semantic clarity
+    return get_temp_words(session_id)
+
+
+def clear_session(session_id):
+    """
+    Clear all words from a processing session.
+
+    Args:
+        session_id: The session ID to clear
+
+    Returns:
+        int: Number of words removed
+    """
+    # This is an alias for clear_temp_session for semantic clarity
+    return clear_temp_session(session_id)
 
 
 # Initialize database when this module is imported
