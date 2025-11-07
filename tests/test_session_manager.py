@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive tests for session management controller (Issue #9).
+Comprehensive tests for session management controller (Issue #9, Issue #11).
 
 Tests cover:
 - ProcessingSession class initialization and methods
@@ -9,14 +9,17 @@ Tests cover:
 - SessionManager multi-session handling
 - Progress tracking and statistics
 - Error handling and recovery
+- Concurrent session handling
+- Complete end-to-end workflow integration
+
+Note: Tests use real integration with parser, translation service, and database
+rather than mocks to provide comprehensive validation of the complete workflow.
 """
 
 import sys
 import os
 import unittest
 import json
-import time
-import shutil
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -366,7 +369,7 @@ class TestSessionManager(unittest.TestCase):
 
         # Session file should be removed
         session_file = os.path.join("C:/Users/marti/Projects-2025/vocab-harvester/sessions",
-                                     f"{session_id}.json")
+                                    f"{session_id}.json")
         self.assertFalse(os.path.exists(session_file), "Session file should be removed")
 
     def test_concurrent_sessions(self):
@@ -509,7 +512,7 @@ class TestErrorHandling(unittest.TestCase):
         self.test_sessions.append(session.session_id)
 
         # Cause an error
-        result = session.start_session("")
+        session.start_session("")
 
         # Status should reflect the error
         status = session.get_session_status()
@@ -543,15 +546,17 @@ def run_all_tests():
 
 if __name__ == "__main__":
     print("=" * 80)
-    print("SESSION MANAGER TEST SUITE (Issue #9)")
+    print("SESSION MANAGER TEST SUITE (Issue #9, Issue #11)")
     print("=" * 80)
     print("\nTesting:")
     print("  - ProcessingSession class and methods")
     print("  - Session workflow orchestration")
     print("  - Session persistence and resumption")
     print("  - SessionManager multi-session handling")
+    print("  - Concurrent session handling")
     print("  - Convenience functions")
     print("  - Error handling and recovery")
+    print("  - Complete end-to-end integration")
     print()
 
     success = run_all_tests()
@@ -560,7 +565,7 @@ if __name__ == "__main__":
         print("\n" + "=" * 80)
         print("[SUCCESS] ALL SESSION MANAGER TESTS PASSED!")
         print("=" * 80)
-        print("\n[PASS] All acceptance criteria met:")
+        print("\n[PASS] All acceptance criteria met (Issue #9, Issue #11):")
         print("  [PASS] Session controller successfully coordinates entire batch workflow")
         print("  [PASS] Users can start processing sessions with German texts")
         print("  [PASS] Progress tracking shows current processing status")
@@ -568,6 +573,9 @@ if __name__ == "__main__":
         print("  [PASS] Multiple sessions can be managed concurrently")
         print("  [PASS] Controller handles errors gracefully and reports status")
         print("  [PASS] Integration with parser, translation, and database modules works")
+        print("  [PASS] Complete workflow integration tested end-to-end")
+        print("  [PASS] Concurrent session management verified")
+        print("  [PASS] Error scenarios properly handled and tested")
         sys.exit(0)
     else:
         print("\n" + "=" * 80)
