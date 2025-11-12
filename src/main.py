@@ -14,8 +14,8 @@ from session_manager import (
     start_processing_session,
     get_session_info
 )
-from database import get_pending_words, approve_word, reject_word
-from review import review_interface
+from database import get_pending_words, approve_word, reject_word, prompt_difficulty
+from review import review_interface, review_pending_words
 
 
 def display_session_summary(session_info):
@@ -206,15 +206,19 @@ def quick_review_session(session_id):
     choice = input("\nSelect option: ").strip().upper()
 
     if choice == "A":
+        # Approve all - single difficulty for all words
         print("\nApproving all words...")
+        difficulty = prompt_difficulty()
+
         approved = 0
         for word_data in pending:
             word, lemma, pos, translation, is_regular, sess_id, created_at = word_data
-            if approve_word(lemma, session_id):
+            if approve_word(lemma, session_id, difficulty):
                 approved += 1
-        print(f"Approved {approved} word(s).")
+        print(f"Approved {approved} word(s) with difficulty {difficulty}.")
 
     elif choice == "R":
+        # Reject all - unchanged
         print("\nRejecting all words...")
         rejected = 0
         for word_data in pending:
@@ -224,8 +228,33 @@ def quick_review_session(session_id):
         print(f"Rejected {rejected} word(s).")
 
     elif choice == "D":
-        print("\nOpening full review interface...")
-        review_interface()
+        # Detailed review - ask for each word
+        print("\nDetailed review mode...")
+
+        for word_data in pending:
+            word, lemma, pos, translation, is_regular, sess_id, created_at = word_data
+
+            # Display word info
+            reg_status = ""
+            if pos in ["VERB", "AUX"]:
+                reg_status = " (irregular)" if is_regular is False else " (regular)"
+            trans_str = f" -> {translation}" if translation else " (no translation)"
+
+            print(f"\n{lemma} [{pos}]{reg_status}{trans_str}")
+
+            # Prompt for action
+            action = input("(A)pprove, (S)kip, (Q)uit: ").strip().upper()
+
+            if action == "A":
+                difficulty = prompt_difficulty()
+                if approve_word(lemma, session_id, difficulty):
+                    print(f"Approved with difficulty {difficulty}")
+            elif action == "S":
+                print("Skipped")
+                continue
+            elif action == "Q":
+                print("Exiting detailed review")
+                break
 
     else:
         print("Returning to main menu.")

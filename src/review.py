@@ -4,8 +4,9 @@ Review interface for managing temporary database and transferring words to main 
 """
 
 from database import (
-    get_temp_words, add_word, word_exists, add_tag_to_word, 
-    remove_temp_word, clear_temp_session
+    get_temp_words, add_word, word_exists, add_tag_to_word,
+    remove_temp_word, clear_temp_session, approve_word, prompt_difficulty,
+    get_pending_words, reject_word
 )
 
 def list_temp_sessions():
@@ -134,6 +135,81 @@ def review_session(session_id):
     
     print(f"\nReview complete: {transferred_count} words transferred, {deleted_count} words deleted")
     return transferred_count, deleted_count
+
+def review_pending_words(session_id):
+    """
+    Modern review interface using approve_word workflow with difficulty.
+    This is the recommended review method for new sessions.
+    """
+    pending = get_pending_words(session_id)
+
+    if not pending:
+        print(f"\nNo pending words in session '{session_id}'")
+        return
+
+    print(f"\n{'=' * 60}")
+    print(f"REVIEWING SESSION: {session_id[:40]}...")
+    print(f"{'=' * 60}")
+    print(f"\nFound {len(pending)} pending word(s)\n")
+
+    approved_count = 0
+    rejected_count = 0
+    word_index = 0
+
+    while word_index < len(pending):
+        word, lemma, pos, translation, is_regular, sess_id, created_at = pending[word_index]
+
+        # Display word info
+        reg_status = ""
+        if pos in ["VERB", "AUX"]:
+            reg_status = " (irregular)" if is_regular is False else " (regular)"
+        trans_str = f" -> {translation}" if translation else " (no translation)"
+
+        print(f"\nWord {word_index + 1} of {len(pending)}: {lemma} [{pos}]{reg_status}{trans_str}")
+        print("Options: (A)pprove - (S)kip - (R)eject - (Q)uit")
+
+        choice = input("Select: ").strip().upper()
+
+        if choice == 'A':
+            # Approve word with difficulty
+            difficulty = prompt_difficulty()
+            tags_input = input("Tags (comma-separated, or Enter for none): ").strip()
+            tags = [t.strip() for t in tags_input.split(",")] if tags_input else None
+
+            if approve_word(lemma, session_id, difficulty, tags):
+                print(f"Approved: '{lemma}' with difficulty {difficulty}")
+                approved_count += 1
+                word_index += 1
+            else:
+                print(f"Failed to approve '{lemma}'")
+
+        elif choice == 'S':
+            # Skip to next word
+            print("Skipped")
+            word_index += 1
+
+        elif choice == 'R':
+            # Reject word
+            if reject_word(lemma, session_id):
+                print(f"Rejected: '{lemma}'")
+                rejected_count += 1
+                word_index += 1
+            else:
+                print(f"Failed to reject '{lemma}'")
+
+        elif choice == 'Q':
+            print("\nExiting review...")
+            break
+
+        else:
+            print("Invalid option. Please choose A, S, R, or Q.")
+
+    print(f"\n{'=' * 60}")
+    print(f"Review Summary:")
+    print(f"  Approved: {approved_count}")
+    print(f"  Rejected: {rejected_count}")
+    print(f"  Remaining: {len(pending) - word_index}")
+    print(f"{'=' * 60}\n")
 
 def review_interface():
     """Main interface for reviewing temporary database sessions."""
