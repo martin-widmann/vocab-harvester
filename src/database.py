@@ -23,7 +23,8 @@ def init_database():
             word TEXT PRIMARY KEY,
             pos TEXT,
             is_regular BOOLEAN,
-            translation TEXT
+            translation TEXT,
+            difficulty INTEGER DEFAULT 3
         )
     """)
     
@@ -325,13 +326,14 @@ def temp_word_exists(word, session_id):
 
 
 # Word approval workflow functions
-def approve_word(lemma, session_id, tags=None):
+def approve_word(lemma, session_id, difficulty=3, tags=None):
     """
     Approve a word from temporary database and move it to main vocabulary.
 
     Args:
         lemma: The lemmatized word to approve
         session_id: The session ID where the word is stored
+        difficulty: Difficulty level (0=known, 1=supereasy, 2=easy, 3=medium, 4=hard)
         tags: Optional list of tag names to assign to the word
 
     Returns:
@@ -369,9 +371,9 @@ def approve_word(lemma, session_id, tags=None):
 
             # Insert word into main database
             cursor.execute(f"""
-                INSERT INTO {TABLE_NAME} (word, pos, is_regular, translation)
-                VALUES (?, ?, ?, ?)
-            """, (lemma_found, pos, is_regular, translation))
+                INSERT INTO {TABLE_NAME} (word, pos, is_regular, translation, difficulty)
+                VALUES (?, ?, ?, ?, ?)
+            """, (lemma_found, pos, is_regular, translation, difficulty))
 
             # Add tags if provided
             if tags:
@@ -408,6 +410,29 @@ def approve_word(lemma, session_id, tags=None):
     except sqlite3.Error as e:
         print(f"Database error approving word: {e}")
         return False
+
+
+def prompt_difficulty():
+    """
+    Prompt user for word difficulty level.
+
+    Returns:
+        Integer 0-4 representing difficulty:
+        0=known, 1=supereasy, 2=easy, 3=medium, 4=hard
+    """
+    print("\nDifficulty: 0=known, 1=supereasy, 2=easy, 3=medium, 4=hard")
+
+    while True:
+        try:
+            choice = input("Select [0-4]: ").strip()
+            difficulty = int(choice)
+
+            if 0 <= difficulty <= 4:
+                return difficulty
+            else:
+                print("Please enter 0-4")
+        except ValueError:
+            print("Invalid input")
 
 
 def reject_word(lemma, session_id):
