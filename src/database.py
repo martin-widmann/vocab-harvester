@@ -74,7 +74,7 @@ def word_exists(word):
     conn.close()
     return exists
 
-def add_word(word, pos, is_regular, translation=None):
+def add_word(word, pos, is_regular, translation=None, difficulty=3):
     """Insert a new word into the database safely."""
     if word_exists(word):
         print(f"'{word}' already exists in the database. Skipping.")
@@ -84,9 +84,9 @@ def add_word(word, pos, is_regular, translation=None):
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute(f"""
-                INSERT INTO {TABLE_NAME} (word, pos, is_regular, translation)
-                VALUES (?, ?, ?, ?)
-            """, (word, pos, is_regular, translation))
+                INSERT INTO {TABLE_NAME} (word, pos, is_regular, translation, difficulty)
+                VALUES (?, ?, ?, ?, ?)
+            """, (word, pos, is_regular, translation, difficulty))
             conn.commit()
             print(f"Added '{word}' to the database.")
     except sqlite3.Error as e:
@@ -492,6 +492,133 @@ def clear_session(session_id):
     """
     # This is an alias for clear_temp_session for semantic clarity
     return clear_temp_session(session_id)
+
+
+# UI Query Functions
+def get_all_words(filters=None, search_term=None):
+    """
+    Get all words from main vocabulary table with optional filtering.
+
+    Args:
+        filters: Optional dict with filter criteria (e.g., {'difficulty': 3})
+        search_term: Optional string to search in word or translation
+
+    Returns:
+        list: List of tuples (word, pos, is_regular, translation, difficulty)
+              Ordered alphabetically by word
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            # Build query
+            query = f"SELECT word, pos, is_regular, translation, difficulty FROM {TABLE_NAME}"
+            params = []
+            conditions = []
+
+            # Add difficulty filter if provided
+            if filters and 'difficulty' in filters:
+                conditions.append("difficulty = ?")
+                params.append(filters['difficulty'])
+
+            # Add search filter if provided
+            if search_term:
+                conditions.append("(word LIKE ? OR translation LIKE ?)")
+                search_pattern = f"%{search_term}%"
+                params.extend([search_pattern, search_pattern])
+
+            # Add WHERE clause if any conditions
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            # Add ordering
+            query += " ORDER BY word ASC"
+
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_all_words: {e}")
+        return []
+
+
+def get_all_sessions():
+    """
+    Get all processing sessions from temp_vocab table.
+
+    Returns:
+        list: List of tuples (session_id, word_count, created_at)
+              Ordered by created_at DESC (newest first)
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT
+                    session_id,
+                    COUNT(*) as word_count,
+                    MIN(created_at) as created_at
+                FROM temp_vocab
+                GROUP BY session_id
+                ORDER BY created_at DESC
+            """)
+            return cursor.fetchall()
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_all_sessions: {e}")
+        return []
+
+
+def get_session_stats(session_id):
+    """
+    Get statistics for a specific session.
+
+    Args:
+        session_id: The session ID to get stats for
+
+    Returns:
+        dict: {'total': int, 'pending': int}
+              Returns {'total': 0, 'pending': 0} if session not found
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            # Count total words in session
+            cursor.execute("""
+                SELECT COUNT(*) FROM temp_vocab WHERE session_id = ?
+            """, (session_id,))
+            total = cursor.fetchone()[0]
+
+            # Pending count is same as total (words in temp_vocab are pending)
+            pending = total
+
+            return {
+                'total': total,
+                'pending': pending
+            }
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_session_stats: {e}")
+        return {'total': 0, 'pending': 0}
+
+
+def get_word_count():
+    """
+    Get total number of words in main vocabulary.
+
+    Returns:
+        int: Total word count
+    """
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}")
+            return cursor.fetchone()[0]
+
+    except sqlite3.Error as e:
+        print(f"Database error in get_word_count: {e}")
+        return 0
 
 
 # Initialize database when this module is imported
