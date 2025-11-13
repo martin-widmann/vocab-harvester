@@ -38,8 +38,35 @@ def tokenize_text(text):
     return tokens
 
 
+def get_article_from_gender(gender_list):
+    """Map spaCy gender to German article.
+
+    Args:
+        gender_list: List of gender values from spaCy morphology (e.g., ['Masc'], ['Fem'], ['Neut'])
+
+    Returns:
+        str: The appropriate German article ('der', 'die', 'das') or None if gender not found
+    """
+    if not gender_list:
+        return None
+
+    gender = gender_list[0]  # Extract first element from list
+
+    article_map = {
+        'Masc': 'der',
+        'Fem': 'die',
+        'Neut': 'das'
+    }
+
+    return article_map.get(gender)
+
+
 def lemmatize_words(tokens):
-    """Convert word tokens to base forms using spaCy."""
+    """Convert word tokens to base forms using spaCy.
+
+    For German nouns, automatically prepends the appropriate article (der/die/das)
+    based on the noun's gender as detected by spaCy.
+    """
     if not tokens:
         return []
 
@@ -50,9 +77,18 @@ def lemmatize_words(tokens):
     lemmatized = []
     for token in doc:
         if token.is_alpha:  # Only process alphabetic tokens
+            lemma = token.lemma_.lower()
+
+            # For nouns, prepend the article based on gender
+            if token.pos_ == "NOUN":
+                gender = token.morph.get("Gender")
+                article = get_article_from_gender(gender)
+                if article:
+                    lemma = f"{article} {lemma}"
+
             lemmatized.append({
                 'original': token.text.lower(),
-                'lemma': token.lemma_.lower(),
+                'lemma': lemma,
                 'pos': token.pos_
             })
 
