@@ -65,7 +65,7 @@ def teardown_test_database():
 
 def add_test_word(word, pos="NOUN", is_regular=None, translation="test", difficulty=3):
     """Helper function to add a test word to the database."""
-    database.add_word(word, pos, is_regular, translation)
+    database.add_word(word, pos, is_regular, translation, difficulty)
 
 
 def add_test_temp_word(word, lemma, session_id, pos="NOUN", translation="test"):
@@ -342,8 +342,7 @@ def run_all_tests():
         # get_all_words tests
         test_get_all_words_empty,
         test_get_all_words_multiple,
-        # Skipping test_get_all_words_filter_difficulty due to test isolation issues
-        # Function works correctly - verified in test_debug.py
+        test_get_all_words_filter_difficulty,
         test_get_all_words_search_term,
         test_get_all_words_combined_filters,
         # get_all_sessions tests
