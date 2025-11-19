@@ -36,7 +36,7 @@ class VocabHarvesterApp:
     def _create_tabs(self):
         """Create and add all tabs to the notebook."""
         # Text Processing Tab
-        self.text_processing_tab = TextProcessingTab(self.notebook)
+        self.text_processing_tab = TextProcessingTab(self.notebook, notebook=self.notebook)
         self.notebook.add(self.text_processing_tab, text="Text Processing")
 
         # Vocabulary Tab
