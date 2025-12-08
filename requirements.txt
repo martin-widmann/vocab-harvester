@@ -1,0 +1,5 @@
+spacy>=3.7
+de-core-news-sm>=3.7
+requests>=2.31
+pyinstaller>=6.3
+pytest>=7.4
