@@ -142,11 +142,17 @@ def process_text_input(raw_text, session_id=None):
     # Step 5: Process words with automatic translation and temp database storage
     added_count = 0
     translated_count = 0
+    seen_originals = set()
 
     for word_data in unknown_words:
         lemma = word_data['lemma']
         pos = word_data['pos']
         original = word_data['original']
+
+        # De-duplicate repeated originals within the same session and text batch
+        if original in seen_originals:
+            continue
+        seen_originals.add(original)
 
         # Check if word already exists in temp database for this session
         if temp_word_exists(original, session_id):

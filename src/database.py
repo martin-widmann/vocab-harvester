@@ -61,6 +61,12 @@ def init_database():
             PRIMARY KEY (word, session_id)
         )
     """)
+
+    # Ensure uniqueness even on existing databases created without the PK
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_temp_vocab_word_session
+        ON temp_vocab(word, session_id)
+    """)
     
     conn.commit()
     conn.close()
@@ -243,11 +249,15 @@ def delete_tag(tag_name):
 # Temporary database management functions
 def add_temp_word(word, lemma, pos, translation, is_regular, session_id):
     """Add a word to temporary processing database."""
+    if temp_word_exists(word, session_id):
+        # Avoid replacing existing row; treat as a duplicate within the same session
+        return False
+
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO temp_vocab
+                INSERT INTO temp_vocab
                 (word, lemma, pos, translation, is_regular, session_id)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (word, lemma, pos, translation, is_regular, session_id))
