@@ -24,6 +24,7 @@ class TextProcessingTab(ttk.Frame):
         self._placeholder_text = "Paste German text here..."
         self._placeholder_active = False
         self._is_processing = False
+        self._progressbar = None
 
         self._setup_ui()
         self._set_placeholder()
@@ -101,6 +102,15 @@ class TextProcessingTab(ttk.Frame):
         )
         self.clear_button.grid(row=0, column=1)
 
+        # Progress indicator (hidden until processing)
+        self._progressbar = ttk.Progressbar(
+            button_frame,
+            mode='indeterminate',
+            length=160
+        )
+        self._progressbar.grid(row=1, column=0, columnspan=2, sticky='e', pady=(6, 0))
+        self._progressbar.grid_remove()
+
     def _create_results_section(self, parent):
         """Create the results display section."""
         self.results_frame = ttk.LabelFrame(parent, text="Results", padding="10")
@@ -145,6 +155,13 @@ class TextProcessingTab(ttk.Frame):
             command=self._go_to_review_queue
         )
         self.review_button.grid(row=5, column=0, columnspan=2, sticky='w', pady=(10, 0))
+
+        self.new_text_button = ttk.Button(
+            self.results_frame,
+            text="Process New Text",
+            command=self._reset_for_new_text
+        )
+        self.new_text_button.grid(row=6, column=0, columnspan=2, sticky='w', pady=(6, 0))
 
     def _set_placeholder(self):
         """Insert placeholder text into the text widget."""
@@ -204,8 +221,12 @@ class TextProcessingTab(ttk.Frame):
         self.clear_button.configure(state=state)
         if is_processing:
             self.process_button.configure(text="Processing...")
+            self._progressbar.grid()
+            self._progressbar.start(10)
         else:
             self.process_button.configure(text="Process Text")
+            self._progressbar.stop()
+            self._progressbar.grid_remove()
 
     def _on_process_click(self):
         """Handle the Process Text button click."""
@@ -242,6 +263,7 @@ class TextProcessingTab(ttk.Frame):
             return
 
         self._show_results(result)
+        self.text_widget.focus_set()
 
     def _go_to_review_queue(self):
         """Switch to the Review Queue tab if available."""
@@ -262,3 +284,8 @@ class TextProcessingTab(ttk.Frame):
                 return current
             current = getattr(current, 'master', None)
         return None
+
+    def _reset_for_new_text(self):
+        """Reset the UI to allow processing a fresh batch."""
+        self._clear_text()
+        self.text_widget.focus_set()
