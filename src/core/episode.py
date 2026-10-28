@@ -7,6 +7,8 @@ from core.subtitles import read_lines
 from core.vocab_store import VocabStore
 from core.word_analysis import analyse
 
+DEFAULT_MEDIA_ROOT = Path(__file__).resolve().parents[2] / "media"
+
 
 @dataclass(frozen=True)
 class NewWord:
@@ -24,6 +26,15 @@ def new_words(episode_folder: Path | str, store: VocabStore) -> list[NewWord]:
             if word.base_form not in found and not store.contains(word.base_form):
                 found[word.base_form] = NewWord(word.base_form, word.word_type)
     return list(found.values())
+
+
+def find_episode(media_root: Path | str, name: str) -> Path:
+    """The folder of an Episode from its name, for example "Dark/S01E03"."""
+    root = Path(media_root).resolve()
+    folder = (root / name).resolve()
+    if not folder.is_relative_to(root) or not folder.is_dir():
+        raise ValueError(f"No Episode {name!r} under {root}")
+    return folder
 
 
 def subtitle_file(episode_folder: Path | str) -> Path:

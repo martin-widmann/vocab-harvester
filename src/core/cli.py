@@ -4,9 +4,7 @@ import argparse
 from pathlib import Path
 
 from core.episode import new_words
-from core.vocab_store import VocabStore
-
-DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "vocab.sqlite"
+from core.vocab_store import DEFAULT_DB, VocabStore
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -19,6 +17,5 @@ def main(argv: list[str] | None = None) -> None:
     listing.add_argument("--db", type=Path, default=DEFAULT_DB)
     args = parser.parse_args(argv)
 
-    args.db.parent.mkdir(parents=True, exist_ok=True)
     for word in new_words(args.episode_folder, VocabStore(args.db)):
         print(f"{word.base_form} ({word.word_type})")

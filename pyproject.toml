@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Learn German vocab and grammar from German series and films"
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.103",
     "spacy>=3.8,<3.9",
+    "uvicorn>=0.23",
 ]
 
 [project.optional-dependencies]

@@ -4,6 +4,8 @@ import sqlite3
 from enum import Enum
 from pathlib import Path
 
+DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "vocab.sqlite"
+
 
 class WordState(Enum):
     KNOWN = "Known"
@@ -27,8 +29,12 @@ class VocabStore:
     """The Base forms the learner has marked, each with its word state."""
 
     def __init__(self, path: Path | str):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(path)
         self._db.execute(_SCHEMA)
+
+    def close(self) -> None:
+        self._db.close()
 
     def add(self, base_form: str, word_type: str, state: WordState) -> None:
         with self._db:
@@ -38,7 +44,10 @@ class VocabStore:
             )
 
     def contains(self, base_form: str) -> bool:
+        return self.state_of(base_form) is not None
+
+    def state_of(self, base_form: str) -> WordState | None:
         row = self._db.execute(
-            "SELECT 1 FROM words WHERE base_form = ?", (base_form,)
+            "SELECT state FROM words WHERE base_form = ?", (base_form,)
         ).fetchone()
-        return row is not None
+        return None if row is None else WordState(row[0])
