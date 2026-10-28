@@ -1,0 +1,18 @@
+﻿1
+00:00:01,000 --> 00:00:03,500
+Äh, wo ist Mikkel?
+
+2
+00:00:04,000 --> 00:00:06,200
+<i>Die Polizei sucht
+den Jungen in der Höhle.</i>
+
+3
+00:00:07,100 --> 00:00:09,000
+Er gab nicht auf.
+
+4
+00:00:10,000 --> 00:00:12,750
+- Hm.
+- Martha wohnt in Berlin.
+
