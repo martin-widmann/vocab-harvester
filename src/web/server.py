@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from core import NewWord, VocabStore, find_episode, new_words, record_answer
 
 PAGE = Path(__file__).parent / "page.html"
+APP_TITLE = "German Media Learning"
 
 
 class Answer(BaseModel):
@@ -20,7 +21,7 @@ class Answer(BaseModel):
 
 
 def create_app(media_root: Path, db_path: Path) -> FastAPI:
-    app = FastAPI(title="German Media Learning")
+    app = FastAPI(title=APP_TITLE)
 
     @app.get("/", include_in_schema=False)
     def page() -> FileResponse:

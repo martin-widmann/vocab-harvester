@@ -4,6 +4,7 @@ import json
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import webbrowser
@@ -12,9 +13,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 from core import find_episode
+from web.server import APP_TITLE
 
 SRC = Path(__file__).resolve().parents[1]
-APP_TITLE = "German Media Learning"
 START_TIMEOUT = 60.0
 
 
@@ -54,10 +55,20 @@ class PageServer:
         """Stop the web server if this PageServer started it."""
         if self._process is not None and self._process.poll() is None:
             self._process.terminate()
-            self._process.wait(timeout=10)
+            try:
+                self._process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self._process.wait()
         self._process = None
 
     def _start(self) -> None:
+        # The server's own error output, to explain a failed start. A file and
+        # not a pipe: a full pipe would block the server.
+        with tempfile.TemporaryFile() as errors:
+            self._spawn(errors)
+
+    def _spawn(self, errors) -> None:
         self._process = subprocess.Popen(
             [
                 sys.executable, "-m", "web",
@@ -69,13 +80,17 @@ class PageServer:
             cwd=SRC,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=errors,
         )
         deadline = time.monotonic() + START_TIMEOUT
         while time.monotonic() < deadline:
             code = self._process.poll()
             if code is not None:
-                raise PageError(f"The web server stopped at start (exit code {code})")
+                self._process = None
+                raise PageError(
+                    f"The web server stopped at start (exit code {code}): "
+                    + _tail(errors)
+                )
             if self._probe() == "ours":
                 return
             time.sleep(0.2)
@@ -83,8 +98,12 @@ class PageServer:
         raise PageError(f"The web server did not start in {START_TIMEOUT:.0f} s")
 
     def _probe(self) -> str:
-        """"free" if nothing listens on the port, "ours" if the web server does."""
+        """"free", "ours" if the web server listens, or "other" for another program."""
         with socket.socket() as probe:
+            if sys.platform != "win32":
+                # Else a port that just closed (TIME_WAIT) looks in use. On
+                # Windows this option would let two servers share the port.
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind(("127.0.0.1", self._port))
                 return "free"
@@ -97,3 +116,8 @@ class PageServer:
         except (OSError, ValueError, KeyError, TypeError):
             return "other"
         return "ours" if title == APP_TITLE else "other"
+
+
+def _tail(errors) -> str:
+    errors.seek(0)
+    return errors.read()[-2000:].decode("utf-8", "replace").strip()

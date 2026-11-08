@@ -21,6 +21,10 @@ You can act only through the tools of the german-media-learning MCP server. You 
 
 An Episode name is the folder under the media folder: `<Series>/S<nn>E<nn>`, for example `Dark/S01E03`. Turn "Dark S01E03" or "Dark season 1 episode 3" into `Dark/S01E03`.
 
+## When the learner types /lesson
+
+"/lesson <Episode>" (the lesson skill) only opens the exercise page. Call `open_page` with the Episode and give the learner the URL. Do not process the Episode first. If no Episode is given, ask for it.
+
 ## When the learner asks for the lesson of an Episode
 
 For example "Make the lesson for Dark S01E03":

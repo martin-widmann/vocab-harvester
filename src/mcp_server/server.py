@@ -23,6 +23,7 @@ METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
+INTERNAL_ERROR = -32603
 
 
 class _RpcError(Exception):
@@ -51,10 +52,18 @@ def _answer(toolbox: Toolbox, raw: bytes) -> dict | None:
         return _error(None, INVALID_REQUEST, "Expected one JSON-RPC request object")
     if "id" not in message:
         return None  # A notification needs no answer.
+    params = message.get("params")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        return _error(message["id"], INVALID_PARAMS, "params must be an object")
     try:
-        result = _handle(toolbox, message["method"], message.get("params") or {})
+        result = _handle(toolbox, message["method"], params)
     except _RpcError as error:
         return _error(message["id"], error.code, str(error))
+    except Exception as error:  # A bug must not stop the server.
+        traceback.print_exc(file=sys.stderr)
+        return _error(message["id"], INTERNAL_ERROR, f"Internal error: {error}")
     return {"jsonrpc": "2.0", "id": message["id"], "result": result}
 
 

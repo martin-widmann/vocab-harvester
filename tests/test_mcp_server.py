@@ -33,10 +33,10 @@ class Client:
         self._process.stdin.write(json.dumps(message).encode("utf-8") + b"\n")
         self._process.stdin.flush()
 
-    def request(self, method: str, params: dict | None = None) -> dict:
+    def request(self, method: str, params: dict | list | None = None) -> dict:
         self._next_id += 1
         self.send({"jsonrpc": "2.0", "id": self._next_id, "method": method,
-                   "params": params or {}})
+                   "params": {} if params is None else params})
         reply = json.loads(self._process.stdout.readline().decode("utf-8"))
         assert reply["id"] == self._next_id
         return reply
@@ -120,3 +120,12 @@ def test_an_unknown_method_is_a_json_rpc_error(client):
     reply = client.request("resources/list")
 
     assert reply["error"]["code"] == -32601
+
+
+def test_a_request_with_params_that_are_not_an_object_is_an_error_and_the_server_goes_on(
+    client,
+):
+    reply = client.request("tools/call", ["new_words"])
+
+    assert reply["error"]["code"] == -32602
+    assert client.request("ping")["result"] == {}

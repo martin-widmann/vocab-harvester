@@ -128,3 +128,11 @@ def test_a_git_bash_drive_path_to_the_data_folder_is_blocked(folders):
     bash_path = f"/{drive.lower()}{rest}".replace("\\", "/")
 
     assert reason(folders, "Bash", command=f"rm {bash_path}/vocab.sqlite")
+
+
+@pytest.mark.parametrize("tool_input", [None, "data/vocab.sqlite", ["data"]])
+def test_a_tool_input_that_is_not_an_object_does_not_crash_the_guard(folders, tool_input):
+    root, data, media = folders
+    broken = {"tool_name": "Write", "tool_input": tool_input, "cwd": str(root)}
+
+    assert blocked_reason(broken, data, media) is None

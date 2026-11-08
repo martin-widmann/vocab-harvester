@@ -35,7 +35,9 @@ REASON = (
 def blocked_reason(event: dict, data_dir: Path, media_root: Path) -> str | None:
     """Why this tool call must be blocked, or None if it may go ahead."""
     tool = event.get("tool_name")
-    tool_input = event.get("tool_input") or {}
+    tool_input = event.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return None  # Not a tool call that names a path.
     cwd = Path(event.get("cwd") or ".")
     if tool in FILE_TOOLS:
         candidates = [str(tool_input.get(FILE_TOOLS[tool]) or "")]
@@ -74,6 +76,9 @@ def main(argv: list[str] | None = None) -> None:
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         print(f"data guard: hook input is not JSON: {error}", file=sys.stderr)
         sys.exit(1)  # A non-blocking error: Claude Code shows it and goes on.
+    if not isinstance(event, dict):
+        print("data guard: hook input is not a JSON object", file=sys.stderr)
+        sys.exit(1)
     reason = blocked_reason(event, args.data_dir, args.media_root)
     if reason is not None:
         print(reason, file=sys.stderr)
