@@ -31,3 +31,21 @@ def test_a_word_missing_from_the_list_has_no_count(table):
 @pytest.mark.parametrize("form", ["Mikkel", "mikkel", "äh"])
 def test_names_and_filler_sounds_get_no_count(table, form):
     assert table.count(form) is None
+
+
+def test_a_file_that_is_not_a_built_table_is_rejected(tmp_path):
+    path = tmp_path / "frequency.sqlite"
+    path.write_bytes(b"")
+
+    with pytest.raises(ValueError, match="build-frequency"):
+        FrequencyTable(path)
+
+
+def test_a_failed_first_build_leaves_no_table(tmp_path):
+    path = tmp_path / "frequency.sqlite"
+
+    with pytest.raises(ValueError):
+        build_frequency_table(["haus 10\n", "kaputt\n"], path)
+
+    with pytest.raises(ValueError, match="build-frequency"):
+        FrequencyTable(path)

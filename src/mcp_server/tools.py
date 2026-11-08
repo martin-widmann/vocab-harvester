@@ -8,6 +8,7 @@ from typing import Protocol
 
 from core import (
     FrequencyTable,
+    Line,
     VocabStore,
     WordFacts,
     analyse,
@@ -18,7 +19,6 @@ from core import (
     subtitle_file,
 )
 from core.frequency import DEFAULT_FREQUENCY
-from core.subtitles import Line
 from core.word_facts import DEFAULT_FACTS
 from web.launch import PageError
 

@@ -31,11 +31,10 @@ def pick_lesson_words(
     episode_folder: Path | str,
     store: VocabStore,
     frequency: FrequencyTable,
-    limit: int = LESSON_WORD_LIMIT,
 ) -> list[LessonWord]:
-    """Pick up to `limit` Unknown words of an Episode, the most frequent first.
+    """Pick up to 20 Unknown words of an Episode, the most frequent first.
 
-    Words the frequency table does not have come last. Words with the same
+    Base forms the frequency table does not have come last. Words with the same
     count keep the order they are first heard in. Each word goes to the
     Section of the first Line it is heard in: 1, 2 or 3 for about 0-15,
     15-30 and 30-45 minutes; a Line after 45 minutes is in Section 3.
@@ -62,7 +61,7 @@ def pick_lesson_words(
         found.values(),
         key=lambda word: (word.count is None, -(word.count or 0)),
     )
-    return ranked[:limit]
+    return ranked[:LESSON_WORD_LIMIT]
 
 
 def _section(line: Line) -> int:

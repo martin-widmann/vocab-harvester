@@ -7,6 +7,7 @@ python -m core build-frequency [--source <FrequencyWords .txt file or URL>]
 
 import argparse
 import http.client
+import sqlite3
 import urllib.request
 from contextlib import closing
 from pathlib import Path
@@ -69,7 +70,7 @@ def main(argv: list[str] | None = None) -> None:
         try:
             with closing(_open_source(args.source)) as source:
                 count = build_frequency_table(source, args.table)
-        except (OSError, ValueError, http.client.HTTPException) as error:
+        except (OSError, ValueError, sqlite3.Error, http.client.HTTPException) as error:
             parser.exit(1, f"error: the build failed, no data changed: {error}\n")
         print(f"Built the frequency table of {count} Base forms into {args.table}")
         return

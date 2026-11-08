@@ -5,10 +5,14 @@ It counts lowercase word forms, one "form count" pair per line. A one-time
 build runs each form through spaCy and adds up the counts per Base form.
 
 The keys are case-folded, because the list is lowercase but noun Base forms
-are capitalised: "Polizei" finds the count of "polizei".
+are capitalised: "Polizei" finds the count of "polizei". So a noun and a word
+of another type with the same spelling ("Essen" and "essen") share one count;
+the lowercase list cannot tell them apart.
 """
 
+import os
 import sqlite3
+import tempfile
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -18,7 +22,7 @@ from core.word_analysis import analyse_all
 DEFAULT_FREQUENCY = Path(__file__).resolve().parents[2] / "data" / "frequency.sqlite"
 
 _SCHEMA = """
-CREATE TABLE IF NOT EXISTS frequency (
+CREATE TABLE frequency (
     key TEXT PRIMARY KEY,
     count INTEGER NOT NULL
 )
@@ -30,23 +34,30 @@ def build_frequency_table(source: Iterable[bytes | str], path: Path | str) -> in
 
     A form that spaCy splits into more than one word adds its count to each.
     Names and filler sounds give no Base form, so they are not counted. A
-    malformed line raises ValueError and leaves the table from before.
+    malformed line raises ValueError. A failed build leaves the table from
+    before, or no table.
     """
     forms, counts = _read_list(source)
     totals: Counter[str] = Counter()
     for words, count in zip(analyse_all(forms), counts):
         for word in words:
             totals[word.base_form.casefold()] += count
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, temp_path = tempfile.mkstemp(suffix=".part", dir=target.parent)
+    os.close(handle)
     try:
-        db.execute(_SCHEMA)
-        with db:
-            db.execute("DELETE FROM frequency")
-            db.executemany("INSERT INTO frequency VALUES (?, ?)", totals.items())
-        return len(totals)
+        db = sqlite3.connect(temp_path)
+        try:
+            with db:
+                db.execute(_SCHEMA)
+                db.executemany("INSERT INTO frequency VALUES (?, ?)", totals.items())
+        finally:
+            db.close()
+        os.replace(temp_path, target)
     finally:
-        db.close()
+        Path(temp_path).unlink(missing_ok=True)
+    return len(totals)
 
 
 def _read_list(source: Iterable[bytes | str]) -> tuple[list[str], list[int]]:
@@ -68,13 +79,22 @@ class FrequencyTable:
     """The built frequency table: Base form -> count."""
 
     def __init__(self, path: Path | str):
+        missing = ValueError(
+            f"No frequency table at {path}; build it once with: "
+            "python -m core build-frequency"
+        )
         if not Path(path).is_file():
-            raise ValueError(
-                f"No frequency table at {path}; build it once with: "
-                "python -m core build-frequency"
-            )
-        self._db = sqlite3.connect(path)
-        self._db.execute(_SCHEMA)
+            raise missing
+        self._db = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            has_table = self._db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'frequency'"
+            ).fetchone()
+        except sqlite3.DatabaseError:
+            has_table = None
+        if not has_table:
+            self._db.close()
+            raise missing
 
     def close(self) -> None:
         self._db.close()
