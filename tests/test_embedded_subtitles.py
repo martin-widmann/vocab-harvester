@@ -196,3 +196,14 @@ def test_hidden_mac_files_next_to_the_video_are_not_taken_as_videos(tmp_path):
     (episode / "._Dark.S01E01.mkv").write_bytes(b"\x00\x05\x16\x07 Mac resource data")
 
     assert subtitle_file(episode) == episode / "Dark.S01E01.srt"
+
+
+def test_hidden_mac_files_next_to_the_srt_are_not_taken_as_subtitles(tmp_path):
+    episode = tmp_path / "Dark" / "S01E01"
+    make_video(episode / "Dark.S01E01.mkv", [(GERMAN_SRT, "ger")])
+    (episode / "._Dark.S01E01.mkv").write_bytes(b"\x00\x05\x16\x07 Mac resource data")
+    (episode / "._Dark.S01E01.srt").write_bytes(b"\x00\x05\x16\x07 Mac resource data")
+    store = VocabStore(tmp_path / "vocab.sqlite")
+
+    assert subtitle_file(episode) == episode / "Dark.S01E01.srt"
+    assert new_words(episode, store) == new_words(GERMAN_SRT.parent, store)
