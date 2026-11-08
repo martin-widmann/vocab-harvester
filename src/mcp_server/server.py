@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from core.episode import DEFAULT_MEDIA_ROOT
+from core.frequency import DEFAULT_FREQUENCY
 from core.vocab_store import DEFAULT_DB
 from core.word_facts import DEFAULT_FACTS
 from mcp_server.tools import ToolError, Toolbox
@@ -122,6 +123,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--media-root", type=Path, default=DEFAULT_MEDIA_ROOT)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--facts", type=Path, default=DEFAULT_FACTS)
+    parser.add_argument("--frequency", type=Path, default=DEFAULT_FREQUENCY)
     parser.add_argument("--port", type=int, default=8000, help="of the web server")
     args = parser.parse_args(argv)
 
@@ -130,7 +132,7 @@ def main(argv: list[str] | None = None) -> None:
     sys.stdout = sys.stderr
     page = PageServer(args.media_root, args.db, args.port)
     try:
-        serve(Toolbox(args.media_root, args.db, page, args.facts), reader, writer)
+        serve(Toolbox(args.media_root, args.db, page, args.facts, args.frequency), reader, writer)
     finally:
         # The page runs only while the tutor session runs.
         page.close()

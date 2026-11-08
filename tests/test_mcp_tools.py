@@ -2,11 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from core import VocabStore, WordState, import_word_facts
+from core import VocabStore, WordState, build_frequency_table, import_word_facts
 from mcp_server.tools import ToolError, Toolbox
 
 MEDIA = Path(__file__).parent / "fixtures"
 KAIKKI_SAMPLE = MEDIA / "kaikki-sample.jsonl"
+FREQUENCY_SAMPLE = MEDIA / "frequency-sample.txt"
 
 
 @pytest.fixture
@@ -37,8 +38,18 @@ def facts(tmp_path):
 
 
 @pytest.fixture
-def toolbox(db, page, facts):
-    return Toolbox(media_root=MEDIA, db_path=db, page=page, facts_path=facts)
+def frequency(tmp_path):
+    path = tmp_path / "frequency.sqlite"
+    with FREQUENCY_SAMPLE.open("rb") as source:
+        build_frequency_table(source, path)
+    return path
+
+
+@pytest.fixture
+def toolbox(db, page, facts, frequency):
+    return Toolbox(
+        media_root=MEDIA, db_path=db, page=page, facts_path=facts, frequency_path=frequency
+    )
 
 
 def test_new_words_tool_lists_the_new_words_of_an_episode_by_name(toolbox, db):
@@ -186,3 +197,48 @@ def test_word_facts_tool_without_imported_data_is_a_tool_error(db, page, tmp_pat
 
     with pytest.raises(ToolError, match="import-word-facts"):
         toolbox.call("word_facts", {"words": [{"base_form": "Hund", "word_type": "NOUN"}]})
+
+
+def test_pick_lesson_words_tool_gives_the_unknown_words_most_frequent_first(toolbox, db):
+    store = VocabStore(db)
+    store.add("aufgeben", "VERB", WordState.UNKNOWN)
+    store.add("suchen", "VERB", WordState.UNKNOWN)
+    store.add("Polizei", "NOUN", WordState.KNOWN)
+
+    words = toolbox.call("pick_lesson_words", {"episode": "Dark/S01E01"})
+
+    assert words == [
+        {
+            "base_form": "suchen",
+            "word_type": "VERB",
+            "count": 70,
+            "section": 1,
+            "seen_form": "sucht",
+            "line": {
+                "number": 2,
+                "start": 4.0,
+                "end": 6.2,
+                "text": "<i>Die Polizei sucht\nden Jungen in der Höhle.</i>",
+            },
+        },
+        {
+            "base_form": "aufgeben",
+            "word_type": "VERB",
+            "count": None,
+            "section": 1,
+            "seen_form": "gab auf",
+            "line": {"number": 3, "start": 7.1, "end": 9.0, "text": "Er gab nicht auf."},
+        },
+    ]
+    assert store.state_of("aufgeben") == WordState.UNKNOWN
+
+
+def test_pick_lesson_words_tool_without_a_frequency_table_is_a_tool_error(
+    db, page, facts, tmp_path
+):
+    toolbox = Toolbox(
+        MEDIA, db, page, facts_path=facts, frequency_path=tmp_path / "missing.sqlite"
+    )
+
+    with pytest.raises(ToolError, match="build-frequency"):
+        toolbox.call("pick_lesson_words", {"episode": "Dark/S01E01"})

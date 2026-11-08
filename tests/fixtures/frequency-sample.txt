@@ -1,0 +1,11 @@
+ich 9000
+gab 300
+gibt 200
+geben 100
+polizei 50
+sucht 40
+suchen 30
+wohnt 20
+mikkel 900
+äh 800
+junge 10

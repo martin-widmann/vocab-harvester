@@ -2,11 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from core import VocabStore, WordFacts, WordState
+from core import FrequencyTable, VocabStore, WordFacts, WordState
 from core.cli import main
 
 EPISODE = Path(__file__).parent / "fixtures" / "Dark" / "S01E01"
 KAIKKI_SAMPLE = Path(__file__).parent / "fixtures" / "kaikki-sample.jsonl"
+FREQUENCY_SAMPLE = Path(__file__).parent / "fixtures" / "frequency-sample.txt"
 
 
 def test_new_words_command_prints_each_new_word_with_its_word_type(tmp_path, capsys):
@@ -44,3 +45,26 @@ def test_a_failed_import_keeps_the_word_facts_from_before(tmp_path, capsys):
     assert exit.value.code == 1
     assert "no data changed" in capsys.readouterr().err
     assert WordFacts(facts).lookup("Hund", "NOUN").gender == "masculine"
+
+
+def test_build_frequency_command_builds_the_table_once_from_the_list(tmp_path, capsys):
+    table = tmp_path / "frequency.sqlite"
+
+    main(["build-frequency", "--source", str(FREQUENCY_SAMPLE), "--table", str(table)])
+
+    assert f"into {table}" in capsys.readouterr().out
+    assert FrequencyTable(table).count("geben") == 600
+
+
+def test_a_failed_build_keeps_the_frequency_table_from_before(tmp_path, capsys):
+    table = tmp_path / "frequency.sqlite"
+    main(["build-frequency", "--source", str(FREQUENCY_SAMPLE), "--table", str(table)])
+    broken = tmp_path / "broken.txt"
+    broken.write_bytes(FREQUENCY_SAMPLE.read_bytes() + b"haus\n")
+
+    with pytest.raises(SystemExit) as exit:
+        main(["build-frequency", "--source", str(broken), "--table", str(table)])
+
+    assert exit.value.code == 1
+    assert "no data changed" in capsys.readouterr().err
+    assert FrequencyTable(table).count("geben") == 600
