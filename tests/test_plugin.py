@@ -84,12 +84,31 @@ def test_no_agent_declares_fields_that_plugin_subagents_ignore(agent):
     assert not {"hooks", "mcpServers", "permissionMode"} & set(frontmatter(agent))
 
 
-def test_the_tutor_has_only_the_plugin_tools():
-    tools = frontmatter(ROOT / "agents" / "tutor.md")["tools"]
+def tools_of(agent: str) -> set[str]:
+    tools = frontmatter(ROOT / "agents" / f"{agent}.md")["tools"]
+    return {tool.strip() for tool in tools.split(",")}
 
-    assert {tool.strip() for tool in tools.split(",")} == {
-        f"mcp__plugin_{PLUGIN}_learning__{name}" for name in TOOL_NAMES
-    }
+
+def mcp_tool(name: str) -> str:
+    return f"mcp__plugin_{PLUGIN}_learning__{name}"
+
+
+def test_the_tutor_has_only_the_plugin_tools_and_can_start_only_the_sentence_writer():
+    # Only the sentence-writer stores example sentences.
+    assert tools_of("tutor") == {
+        mcp_tool(name) for name in TOOL_NAMES - {"add_sentences"}
+    } | {f"Agent({PLUGIN}:sentence-writer)"}
+
+
+def test_there_is_a_sentence_writer_agent():
+    assert frontmatter(ROOT / "agents" / "sentence-writer.md")["name"] == "sentence-writer"
+
+
+def test_the_sentence_writer_stores_sentences_only_through_the_add_sentences_tool():
+    tools = tools_of("sentence-writer")
+
+    assert mcp_tool("add_sentences") in tools
+    assert tools <= {mcp_tool(name) for name in TOOL_NAMES}
 
 
 def test_the_lesson_skill_opens_the_page_with_the_open_page_tool():

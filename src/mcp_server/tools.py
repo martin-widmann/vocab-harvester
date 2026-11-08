@@ -9,9 +9,13 @@ from typing import Protocol
 from core import (
     FrequencyTable,
     Line,
+    SentenceChecker,
+    SentenceToStore,
     VocabStore,
     WordFacts,
+    add_sentences,
     analyse,
+    failed_sentences,
     find_episode,
     new_words,
     pick_lesson_words,
@@ -19,6 +23,8 @@ from core import (
     subtitle_file,
 )
 from core.frequency import DEFAULT_FREQUENCY
+from core.language_tool import LanguageTool, SystemClock
+from core.sentences import Clock, LanguageToolApi
 from core.word_facts import DEFAULT_FACTS
 from web.launch import PageError
 
@@ -37,7 +43,18 @@ _WORD = {
     "additionalProperties": False,
 }
 
-_JSON_TYPES = {"string": str, "array": list, "object": dict}
+_SENTENCE = {
+    "type": "object",
+    "properties": {
+        "base_form": {"type": "string"},
+        "number": {"type": "integer", "minimum": 1, "maximum": 3},
+        "sentence": {"type": "string"},
+    },
+    "required": ["base_form", "number", "sentence"],
+    "additionalProperties": False,
+}
+
+_JSON_TYPES = {"string": str, "integer": int, "array": list, "object": dict}
 
 
 class Page(Protocol):
@@ -79,7 +96,7 @@ class Tool:
 
 def _check_value(name: str, value, schema: dict) -> None:
     """Check a value against the small part of JSON Schema the tools use."""
-    if not isinstance(value, _JSON_TYPES[schema["type"]]):
+    if not isinstance(value, _JSON_TYPES[schema["type"]]) or isinstance(value, bool):
         raise ToolError(f"{name} must be of type {schema['type']}")
     if schema["type"] == "array":
         for item in value:
@@ -102,12 +119,18 @@ class Toolbox:
         page: Page,
         facts_path: Path | str = DEFAULT_FACTS,
         frequency_path: Path | str = DEFAULT_FREQUENCY,
+        language_tool: LanguageToolApi | None = None,
+        clock: Clock | None = None,
     ):
         self._media_root = Path(media_root)
         self._db_path = Path(db_path)
         self._facts_path = Path(facts_path)
         self._frequency_path = Path(frequency_path)
         self._page = page
+        # One checker for the whole session, so the rate limit holds across calls.
+        self._checker = SentenceChecker(
+            language_tool or LanguageTool(), clock or SystemClock()
+        )
         self.tools = {
             tool.name: tool
             for tool in [
@@ -194,6 +217,37 @@ class Toolbox:
                     self._pick_lesson_words,
                 ),
                 Tool(
+                    "add_sentences",
+                    "Store example sentences for Unknown or Taught words: "
+                    "sentence 1, 2 and 3 of each Base form. LanguageTool checks "
+                    "every sentence first; only a sentence with no problems is "
+                    "stored. Send all sentences in one call. Each result has a "
+                    'status: "stored"; "retry" (it failed: write a new sentence '
+                    "with the same number, retries_left tells how many tries "
+                    'are left); or "listed" (it failed its last retry and is on '
+                    "the list for the learner; it takes no more tries). "
+                    "problems gives what LanguageTool found.",
+                    {
+                        "sentences": {
+                            "type": "array",
+                            "items": _SENTENCE,
+                            "description": 'For example [{"base_form": "aufgeben", '
+                            '"number": 1, "sentence": "Er gibt nie auf."}].',
+                        }
+                    },
+                    self._add_sentences,
+                ),
+                Tool(
+                    "failed_sentences",
+                    "Give the list for the learner: example sentences whose "
+                    "last LanguageTool check failed, with the problems found. "
+                    'Status "listed": it failed all its retries. Status '
+                    '"retry": it has retries left, but no new sentence was sent. '
+                    "None of them is stored.",
+                    {},
+                    self._failed_sentences,
+                ),
+                Tool(
                     "open_page",
                     "Start the web server if it is not running and open the "
                     "exercise page of an Episode in the browser, on its Check tab.",
@@ -263,6 +317,19 @@ class Toolbox:
             }
             for word in words
         ]
+
+    def _add_sentences(self, sentences: list[dict]) -> list[dict]:
+        with closing(VocabStore(self._db_path)) as store:
+            results = add_sentences(
+                store,
+                self._checker,
+                [SentenceToStore(**sentence) for sentence in sentences],
+            )
+        return [asdict(result) for result in results]
+
+    def _failed_sentences(self) -> list[dict]:
+        with closing(VocabStore(self._db_path)) as store:
+            return [asdict(failed) for failed in failed_sentences(store)]
 
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}
