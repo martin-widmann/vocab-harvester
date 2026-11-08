@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from core import VocabStore, new_words, subtitle_file
+from core.cli import main
 
 FIXTURES = Path(__file__).parent / "fixtures" / "Dark"
 GERMAN_SRT = FIXTURES / "S01E01" / "Dark.S01E01.de.srt"
@@ -19,10 +20,13 @@ def _ffmpeg() -> str:
     return imageio_ffmpeg.get_ffmpeg_exe()
 
 
-def make_video(path: Path, tracks: list[tuple[Path, str]]) -> Path:
+def make_video(
+    path: Path, tracks: list[tuple[Path, str]], forced: tuple[int, ...] = ()
+) -> Path:
     """Build a video container whose subtitle tracks are the given .srt files.
 
-    Each track is (srt file, language code), in track order.
+    Each track is (srt file, language code), in track order. The tracks with
+    an index in `forced` are marked as forced.
     """
     command = [_ffmpeg(), "-hide_banner", "-loglevel", "error", "-y"]
     for srt, _ in tracks:
@@ -32,6 +36,8 @@ def make_video(path: Path, tracks: list[tuple[Path, str]]) -> Path:
     command += ["-c:s", "srt"]
     for index, (_, language) in enumerate(tracks):
         command += [f"-metadata:s:s:{index}", f"language={language}"]
+        if index in forced:
+            command += [f"-disposition:s:{index}", "forced"]
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(command + [str(path)], check=True)
     return path
@@ -80,3 +86,31 @@ def test_a_tagged_srt_does_not_stop_the_extraction(tmp_path):
 def test_a_folder_with_no_srt_and_no_video_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="found no .srt and 0 videos"):
         subtitle_file(tmp_path)
+
+
+def test_a_full_german_text_track_is_taken_over_a_forced_one(tmp_path):
+    episode = tmp_path / "Dark" / "S01E01"
+    make_video(
+        episode / "Dark.S01E01.mkv",
+        [(OTHER_SRT, "ger"), (GERMAN_SRT, "de-DE")],
+        forced=(0,),
+    )
+    store = VocabStore(tmp_path / "vocab.sqlite")
+
+    assert new_words(episode, store) == new_words(GERMAN_SRT.parent, store)
+
+
+def test_a_missing_episode_folder_is_rejected(tmp_path):
+    with pytest.raises(ValueError):
+        subtitle_file(tmp_path / "S09E09")
+
+
+def test_the_new_words_command_shows_the_error_without_a_traceback(tmp_path, capsys):
+    episode = tmp_path / "Dark" / "S01E01"
+    make_video(episode / "Dark.S01E01.mkv", [(GERMAN_SRT, "eng")])
+
+    with pytest.raises(SystemExit) as stop:
+        main(["new-words", str(episode), "--db", str(tmp_path / "vocab.sqlite")])
+
+    assert stop.value.code != 0
+    assert "No German subtitle track in Dark.S01E01.mkv" in capsys.readouterr().err

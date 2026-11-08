@@ -44,6 +44,8 @@ def subtitle_file(episode_folder: Path | str) -> Path:
     track is extracted to an .srt next to the video, once.
     """
     folder = Path(episode_folder)
+    if not folder.is_dir():
+        raise ValueError(f"No Episode folder {folder}")
     srts = [
         path for path in folder.glob("*.srt") if not path.name.endswith(".tagged.srt")
     ]

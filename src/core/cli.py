@@ -17,5 +17,9 @@ def main(argv: list[str] | None = None) -> None:
     listing.add_argument("--db", type=Path, default=DEFAULT_DB)
     args = parser.parse_args(argv)
 
-    for word in new_words(args.episode_folder, VocabStore(args.db)):
+    try:
+        words = new_words(args.episode_folder, VocabStore(args.db))
+    except ValueError as error:
+        parser.exit(1, f"error: {error}\n")
+    for word in words:
         print(f"{word.base_form} ({word.word_type})")
