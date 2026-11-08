@@ -3,11 +3,14 @@ import pytest
 from fakes import FakeClock, FakeLanguageTool
 
 from core import (
+    LanguageToolBusy,
     SentenceChecker,
+    SentenceStatus,
     SentenceToStore,
     VocabStore,
     WordState,
     add_sentences,
+    failed_sentences,
 )
 
 
@@ -69,7 +72,7 @@ def test_a_retry_that_passes_is_stored(store, checker):
         store, checker, [SentenceToStore("aufgeben", 1, "Er gibt nie auf.")]
     )
 
-    assert result.status == "stored"
+    assert (result.status, result.retries_left) == ("stored", None)
     assert store.example_sentences("aufgeben") == {1: "Er gibt nie auf."}
 
 
@@ -90,7 +93,8 @@ def test_after_3_failed_retries_the_sentence_goes_on_the_list_for_the_learner(
         ("listed", 0),
     ]
     assert store.example_sentences("aufgeben") == {}
-    (failed,) = store.failed_sentences()
+    (failed,) = failed_sentences(store)
+    assert failed.status == SentenceStatus.LISTED
     assert (failed.base_form, failed.number, failed.sentence, failed.problems) == (
         "aufgeben",
         2,
@@ -105,7 +109,26 @@ def test_the_tries_of_one_sentence_do_not_count_for_another(store, checker):
     (other_word,) = add_sentences(store, checker, [SentenceToStore("Höhle", 1, "falsch")])
 
     assert other_word.retries_left == 3
-    assert store.failed_sentences() == []
+    assert [failed.status for failed in failed_sentences(store)] == ["retry"] * 4
+
+
+def test_a_failed_sentence_not_yet_retried_is_on_the_list_for_the_learner(store, checker):
+    add_sentences(store, checker, [SentenceToStore("aufgeben", 1, "Das ist falsch.")])
+
+    (failed,) = failed_sentences(store)
+
+    assert (failed.sentence, failed.status, failed.retries_left) == (
+        "Das ist falsch.",
+        SentenceStatus.RETRY,
+        3,
+    )
+
+
+def test_a_retry_that_passes_takes_the_sentence_off_the_list(store, checker):
+    add_sentences(store, checker, [SentenceToStore("aufgeben", 1, "Das ist falsch.")])
+    add_sentences(store, checker, [SentenceToStore("aufgeben", 1, "Er gibt nie auf.")])
+
+    assert failed_sentences(store) == []
 
 
 def test_a_sentence_on_the_list_for_the_learner_takes_no_more_tries(store, checker):
@@ -125,6 +148,7 @@ def test_a_sentence_on_the_list_for_the_learner_takes_no_more_tries(store, check
         (SentenceToStore("aufgeben", 4, "Er gibt auf."), "1, 2 or 3"),
         (SentenceToStore("aufgeben", 1, "   "), "empty"),
         (SentenceToStore("aufgeben", 1, "Er gibt auf. " * 40), "too long"),
+        (SentenceToStore("aufgeben", 1, "Er gibt\nauf."), "one line"),
     ],
 )
 def test_a_bad_sentence_rejects_the_whole_call_before_languagetool_runs(
@@ -238,3 +262,31 @@ def test_requests_after_a_quiet_minute_do_not_wait(language_tool, clock):
     checker.check(["Das ist gut."])
 
     assert clock.sleeps == []
+
+
+class BusyOnce(FakeLanguageTool):
+    """Answers "too many requests" for the first `busy` requests."""
+
+    def __init__(self, busy: int):
+        super().__init__()
+        self.busy = busy
+
+    def check(self, text):
+        if self.busy:
+            self.busy -= 1
+            raise LanguageToolBusy("too many requests")
+        return super().check(text)
+
+
+def test_a_busy_languagetool_is_asked_again_after_a_minute(clock):
+    checker = SentenceChecker(BusyOnce(busy=1), clock)
+
+    assert checker.check(["Das ist falsch."]) == [["Fehler: falsch"]]
+    assert clock.sleeps == [60]
+
+
+def test_languagetool_busy_twice_in_a_row_is_an_error(clock):
+    checker = SentenceChecker(BusyOnce(busy=2), clock)
+
+    with pytest.raises(LanguageToolBusy):
+        checker.check(["Das ist gut."])

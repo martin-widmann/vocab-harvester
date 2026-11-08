@@ -94,9 +94,10 @@ def mcp_tool(name: str) -> str:
 
 
 def test_the_tutor_has_only_the_plugin_tools_and_can_start_only_the_sentence_writer():
-    assert tools_of("tutor") == {mcp_tool(name) for name in TOOL_NAMES} | {
-        f"Agent({PLUGIN}:sentence-writer)"
-    }
+    # Only the sentence-writer stores example sentences.
+    assert tools_of("tutor") == {
+        mcp_tool(name) for name in TOOL_NAMES - {"add_sentences"}
+    } | {f"Agent({PLUGIN}:sentence-writer)"}
 
 
 def test_there_is_a_sentence_writer_agent():

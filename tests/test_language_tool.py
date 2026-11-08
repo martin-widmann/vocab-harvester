@@ -6,7 +6,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from core import Issue
+from core import Issue, LanguageToolBusy
 from core.language_tool import PUBLIC_URL, LanguageTool, LanguageToolError
 
 # A cut-down answer of the public server for "Ich habe ein Hauss."
@@ -68,7 +68,6 @@ def test_each_match_becomes_an_issue_with_the_flagged_words_and_suggestions():
 @pytest.mark.parametrize(
     "error, message",
     [
-        (urllib.error.HTTPError(PUBLIC_URL, 429, "Too Many Requests", {}, None), "rate limit"),
         (urllib.error.HTTPError(PUBLIC_URL, 500, "Server Error", {}, None), "500"),
         (urllib.error.URLError("no network"), "cannot be reached"),
         (TimeoutError("timed out"), "cannot be reached"),
@@ -85,3 +84,30 @@ def test_an_answer_that_is_not_json_is_a_languagetool_error():
 
     with pytest.raises(LanguageToolError, match="not understood"):
         LanguageTool(post=busy_server).check("Hallo.")
+
+
+def test_the_flagged_words_are_found_after_characters_outside_the_bmp():
+    smiley = "\U0001F600"  # 2 UTF-16 code units, as LanguageTool counts
+    answer = {
+        "matches": [
+            {
+                "message": "Möglicher Tippfehler gefunden.",
+                "offset": 4,
+                "length": 5,
+                "replacements": [],
+                "context": {"text": f"{smiley} Ein Hauss.", "offset": 7, "length": 5},
+                "rule": {"issueType": "misspelling"},
+            }
+        ]
+    }
+
+    (issue,) = LanguageTool(post=FakeTransport(answer)).check(f"{smiley} Ein Hauss.")
+
+    assert issue.message == 'Möglicher Tippfehler gefunden. "Hauss"'
+
+
+def test_too_many_requests_means_languagetool_is_busy():
+    error = urllib.error.HTTPError(PUBLIC_URL, 429, "Too Many Requests", {}, None)
+
+    with pytest.raises(LanguageToolBusy, match="rate limit"):
+        LanguageTool(post=FakeTransport(error=error)).check("Hallo.")

@@ -11,7 +11,7 @@ import urllib.request
 from collections.abc import Callable
 from urllib.parse import urlencode
 
-from core.sentences import Issue
+from core.sentences import Issue, LanguageToolBusy
 
 PUBLIC_URL = "https://api.languagetool.org/v2/check"
 LANGUAGE = "de-DE"
@@ -20,7 +20,10 @@ _MAX_SUGGESTIONS = 3
 
 
 class LanguageToolError(ValueError):
-    """LanguageTool could not check a text."""
+    """LanguageTool could not check a text.
+
+    A ValueError, as all errors of the core that a caller can explain.
+    """
 
 
 def _post(url: str, body: bytes) -> bytes:
@@ -52,7 +55,7 @@ class LanguageTool:
             raw = self._post(self._url, body)
         except urllib.error.HTTPError as error:
             if error.code == 429:
-                raise LanguageToolError(
+                raise LanguageToolBusy(
                     "The LanguageTool rate limit is reached; try again in a minute"
                 ) from error
             raise LanguageToolError(
@@ -71,7 +74,13 @@ class LanguageTool:
 
 def _issue(match: dict) -> Issue:
     context = match["context"]
-    flagged = context["text"][context["offset"] : context["offset"] + context["length"]]
+    # LanguageTool counts UTF-16 code units, 2 bytes each in UTF-16-LE.
+    start, length = 2 * context["offset"], 2 * context["length"]
+    flagged = (
+        context["text"]
+        .encode("utf-16-le")[start : start + length]
+        .decode("utf-16-le", errors="replace")
+    )
     message = f'{match["message"]} "{flagged}"'
     suggestions = [r["value"] for r in match.get("replacements", [])][:_MAX_SUGGESTIONS]
     if suggestions:

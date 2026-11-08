@@ -1,6 +1,7 @@
-"""Example sentences: the sentences that teach a Taught word.
+"""Example sentences: 3 sentences that teach each word a Lesson picks.
 
-An agent writes the sentences. LanguageTool checks each one before it is
+The words are Unknown words when their sentences are written, and Taught
+words after their Lesson. An agent writes the sentences. LanguageTool checks each one before it is
 stored. The retry policy lives here, not in the agent.
 """
 
@@ -8,10 +9,12 @@ from bisect import bisect_right
 from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
+from enum import Enum
 from itertools import accumulate
 from typing import Protocol
+from urllib.parse import quote_plus
 
-from core.vocab_store import FailedSentence, VocabStore, WordState
+from core.vocab_store import VocabStore, WordState
 
 SENTENCES_PER_WORD = 3
 MAX_RETRIES = 3
@@ -36,9 +39,16 @@ class Issue:
     issue_type: str
 
 
+class LanguageToolBusy(ValueError):
+    """LanguageTool answered "too many requests"."""
+
+
 class LanguageToolApi(Protocol):
     def check(self, text: str) -> list[Issue]:
-        """Check a German text; give the problems found."""
+        """Check a German text; give the problems found.
+
+        Raises LanguageToolBusy when the server says "too many requests".
+        """
 
 
 class Clock(Protocol):
@@ -80,18 +90,36 @@ class SentenceChecker:
         problems: list[list[str]] = [[] for _ in sentences]
         for batch in self._batches(sentences):
             text = _SEPARATOR.join(sentences[index] for index in batch)
-            self._wait_for(_size(text))
-            self._sent.append((self._clock.now(), _size(text)))
-            starts = list(accumulate(
-                (_utf16_length(sentences[index]) + _utf16_length(_SEPARATOR) for index in batch[:-1]),
-                initial=0,
-            ))
-            for issue in self._language_tool.check(text):
+            # Where each sentence starts in the text, in LanguageTool's units.
+            starts = list(
+                accumulate(
+                    (_utf16_length(sentences[index] + _SEPARATOR) for index in batch[:-1]),
+                    initial=0,
+                )
+            )
+            for issue in self._send(text):
                 if issue.issue_type in _NOT_PROBLEMS:
                     continue
                 position = max(bisect_right(starts, issue.offset) - 1, 0)
                 problems[batch[position]].append(issue.message)
         return problems
+
+    def _send(self, text: str) -> list[Issue]:
+        """Send one request; when LanguageTool is busy, ask once more a minute later.
+
+        The server can be busy when its limit is shared, for example with
+        another program on the same computer.
+        """
+        try:
+            return self._send_now(text)
+        except LanguageToolBusy:
+            self._clock.sleep(_MINUTE)
+            return self._send_now(text)
+
+    def _send_now(self, text: str) -> list[Issue]:
+        self._wait_for(_size(text))
+        self._sent.append((self._clock.now(), _size(text)))
+        return self._language_tool.check(text)
 
     def _batches(self, sentences: list[str]) -> Iterator[list[int]]:
         batch: list[int] = []
@@ -120,7 +148,8 @@ class SentenceChecker:
 
 
 def _size(text: str) -> int:
-    return len(text.encode("utf-8"))
+    """The size of a text in a request body, where "ü" takes 6 bytes."""
+    return len(quote_plus(text))
 
 
 def _utf16_length(text: str) -> int:
@@ -136,14 +165,20 @@ class SentenceToStore:
     sentence: str
 
 
+class SentenceStatus(str, Enum):
+    STORED = "stored"
+    RETRY = "retry"  # It failed; the agent writes a new sentence with the same number.
+    LISTED = "listed"  # It failed its last retry; it is on the list for the learner.
+
+
 @dataclass(frozen=True)
 class SentenceResult:
     base_form: str
     number: int
     sentence: str
-    status: str
+    status: SentenceStatus
     problems: list[str]
-    retries_left: int
+    retries_left: int | None  # None for a stored sentence
 
 
 def add_sentences(
@@ -158,24 +193,43 @@ def add_sentences(
     sentences = _checked_input(store, sentences)
     results = []
     for item, problems in zip(sentences, checker.check([s.sentence for s in sentences])):
-        if not problems:
-            store.add_example_sentence(item.base_form, item.number, item.sentence)
-            status, retries_left = "stored", 0
-        else:
-            failures = store.add_failed_try(item.base_form, item.number)
-            retries_left = MAX_RETRIES + 1 - failures
-            status = "retry"
-            if retries_left == 0:
-                status = "listed"
-                store.add_failed_sentence(
-                    FailedSentence(item.base_form, item.number, item.sentence, problems)
-                )
-        results.append(
-            SentenceResult(
-                item.base_form, item.number, item.sentence, status, problems, retries_left
+        if problems:
+            failures = store.add_failed_try(
+                item.base_form, item.number, item.sentence, problems
             )
-        )
+            results.append(_result(item, problems, failures))
+        else:
+            store.add_example_sentence(item.base_form, item.number, item.sentence)
+            results.append(
+                SentenceResult(
+                    item.base_form, item.number, item.sentence, SentenceStatus.STORED, [], None
+                )
+            )
     return results
+
+
+def failed_sentences(store: VocabStore) -> list[SentenceResult]:
+    """The list for the learner: example sentences whose last try failed.
+
+    A "listed" sentence failed all its retries. A "retry" sentence still has
+    retries left, but the agent stopped before it sent a new one.
+    """
+    return [
+        _result(
+            SentenceToStore(failed.base_form, failed.number, failed.sentence),
+            failed.problems,
+            failed.failures,
+        )
+        for failed in store.failed_sentences()
+    ]
+
+
+def _result(item: SentenceToStore, problems: list[str], failures: int) -> SentenceResult:
+    retries_left = max(MAX_RETRIES + 1 - failures, 0)
+    status = SentenceStatus.RETRY if retries_left else SentenceStatus.LISTED
+    return SentenceResult(
+        item.base_form, item.number, item.sentence, status, problems, retries_left
+    )
 
 
 def _checked_input(
@@ -197,12 +251,14 @@ def _checked_input(
             raise ValueError(
                 f"{name} is too long; use at most {MAX_SENTENCE_LENGTH} characters"
             )
+        if len(sentence.splitlines()) > 1:
+            raise ValueError(f"{name} must be one line")
         if (item.base_form, item.number) in seen:
             raise ValueError(f"{name} is in this call twice")
         seen.add((item.base_form, item.number))
         if item.number in store.example_sentences(item.base_form):
             raise ValueError(f"{name} is already stored")
-        if store.is_failed_sentence(item.base_form, item.number):
+        if store.failed_tries(item.base_form, item.number) > MAX_RETRIES:
             raise ValueError(
                 f"{name} is on the list for the learner; it takes no more tries"
             )

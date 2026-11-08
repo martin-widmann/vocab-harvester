@@ -277,7 +277,7 @@ def test_add_sentences_tool_stores_the_sentences_languagetool_passes(toolbox, db
             "sentence": "Er gibt nie auf.",
             "status": "stored",
             "problems": [],
-            "retries_left": 0,
+            "retries_left": None,
         },
         {
             "base_form": "aufgeben",
@@ -304,7 +304,9 @@ def test_failed_sentences_tool_gives_the_list_for_the_learner(toolbox, db):
             "base_form": "aufgeben",
             "number": 3,
             "sentence": "falsch",
+            "status": "listed",
             "problems": ["Fehler: falsch"],
+            "retries_left": 0,
         }
     ]
 

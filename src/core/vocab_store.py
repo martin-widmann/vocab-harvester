@@ -18,12 +18,13 @@ class WordState(Enum):
 
 @dataclass(frozen=True)
 class FailedSentence:
-    """An example sentence that failed its last try; it waits for the learner."""
+    """The last failed try of an example sentence, and how many tries failed."""
 
     base_form: str
     number: int
     sentence: str
     problems: list[str]
+    failures: int
 
 
 _STATES = ", ".join(f"'{state.value}'" for state in WordState)
@@ -40,17 +41,12 @@ CREATE TABLE IF NOT EXISTS example_sentences (
     sentence TEXT NOT NULL,
     PRIMARY KEY (base_form, number)
 );
-CREATE TABLE IF NOT EXISTS sentence_tries (
-    base_form TEXT NOT NULL REFERENCES words (base_form),
-    number INTEGER NOT NULL,
-    failures INTEGER NOT NULL,
-    PRIMARY KEY (base_form, number)
-);
 CREATE TABLE IF NOT EXISTS failed_sentences (
     base_form TEXT NOT NULL REFERENCES words (base_form),
     number INTEGER NOT NULL,
     sentence TEXT NOT NULL,
     problems TEXT NOT NULL,
+    failures INTEGER NOT NULL,
     PRIMARY KEY (base_form, number)
 );
 """
@@ -62,6 +58,7 @@ class VocabStore:
     def __init__(self, path: Path | str):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(path)
+        self._db.execute("PRAGMA foreign_keys = ON")
         self._db.executescript(_SCHEMA)
 
     def close(self) -> None:
@@ -84,11 +81,16 @@ class VocabStore:
         return None if row is None else WordState(row[0])
 
     def add_example_sentence(self, base_form: str, number: int, sentence: str) -> None:
+        """Store a sentence that passed its check; its failed tries are done with."""
         with self._db:
             self._db.execute(
                 "INSERT INTO example_sentences (base_form, number, sentence) "
                 "VALUES (?, ?, ?)",
                 (base_form, number, sentence),
+            )
+            self._db.execute(
+                "DELETE FROM failed_sentences WHERE base_form = ? AND number = ?",
+                (base_form, number),
             )
 
     def example_sentences(self, base_form: str) -> dict[int, str]:
@@ -100,51 +102,36 @@ class VocabStore:
         )
         return dict(rows)
 
+    def add_failed_try(
+        self, base_form: str, number: int, sentence: str, problems: list[str]
+    ) -> int:
+        """Keep a failed try as the last one of its sentence; give the failure count."""
+        with self._db:
+            self._db.execute(
+                "INSERT INTO failed_sentences "
+                "(base_form, number, sentence, problems, failures) "
+                "VALUES (?, ?, ?, ?, 1) ON CONFLICT (base_form, number) DO UPDATE SET "
+                "sentence = excluded.sentence, problems = excluded.problems, "
+                "failures = failures + 1",
+                (base_form, number, sentence, json.dumps(problems, ensure_ascii=False)),
+            )
+        return self.failed_tries(base_form, number)
+
     def failed_tries(self, base_form: str, number: int) -> int:
         """How often example sentence `number` of a Base form failed its check."""
         row = self._db.execute(
-            "SELECT failures FROM sentence_tries WHERE base_form = ? AND number = ?",
+            "SELECT failures FROM failed_sentences WHERE base_form = ? AND number = ?",
             (base_form, number),
         ).fetchone()
         return 0 if row is None else row[0]
 
-    def add_failed_try(self, base_form: str, number: int) -> int:
-        """Count one more failed try; give the new count."""
-        with self._db:
-            self._db.execute(
-                "INSERT INTO sentence_tries (base_form, number, failures) VALUES (?, ?, 1) "
-                "ON CONFLICT (base_form, number) DO UPDATE SET failures = failures + 1",
-                (base_form, number),
-            )
-        return self.failed_tries(base_form, number)
-
-    def add_failed_sentence(self, failed: FailedSentence) -> None:
-        with self._db:
-            self._db.execute(
-                "INSERT INTO failed_sentences (base_form, number, sentence, problems) "
-                "VALUES (?, ?, ?, ?)",
-                (
-                    failed.base_form,
-                    failed.number,
-                    failed.sentence,
-                    json.dumps(failed.problems, ensure_ascii=False),
-                ),
-            )
-
     def failed_sentences(self) -> list[FailedSentence]:
-        """The list for the learner: sentences that failed all their tries."""
+        """Every example sentence whose last try failed, in the order they first failed."""
         rows = self._db.execute(
-            "SELECT base_form, number, sentence, problems FROM failed_sentences "
-            "ORDER BY rowid"
+            "SELECT base_form, number, sentence, problems, failures "
+            "FROM failed_sentences ORDER BY rowid"
         )
         return [
-            FailedSentence(base_form, number, sentence, json.loads(problems))
-            for base_form, number, sentence, problems in rows
+            FailedSentence(base_form, number, sentence, json.loads(problems), failures)
+            for base_form, number, sentence, problems, failures in rows
         ]
-
-    def is_failed_sentence(self, base_form: str, number: int) -> bool:
-        row = self._db.execute(
-            "SELECT 1 FROM failed_sentences WHERE base_form = ? AND number = ?",
-            (base_form, number),
-        ).fetchone()
-        return row is not None

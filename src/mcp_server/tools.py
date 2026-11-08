@@ -15,6 +15,7 @@ from core import (
     WordFacts,
     add_sentences,
     analyse,
+    failed_sentences,
     find_episode,
     new_words,
     pick_lesson_words,
@@ -238,9 +239,11 @@ class Toolbox:
                 ),
                 Tool(
                     "failed_sentences",
-                    "Give the list for the learner: example sentences that "
-                    "failed the LanguageTool check and all their retries, with "
-                    "the problems found.",
+                    "Give the list for the learner: example sentences whose "
+                    "last LanguageTool check failed, with the problems found. "
+                    'Status "listed": it failed all its retries. Status '
+                    '"retry": it has retries left, but no new sentence was sent. '
+                    "None of them is stored.",
                     {},
                     self._failed_sentences,
                 ),
@@ -326,7 +329,7 @@ class Toolbox:
 
     def _failed_sentences(self) -> list[dict]:
         with closing(VocabStore(self._db_path)) as store:
-            return [asdict(failed) for failed in store.failed_sentences()]
+            return [asdict(failed) for failed in failed_sentences(store)]
 
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}
