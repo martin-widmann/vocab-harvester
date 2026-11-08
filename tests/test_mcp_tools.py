@@ -2,10 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from core import VocabStore, WordState
+from core import VocabStore, WordState, import_word_facts
 from mcp_server.tools import ToolError, Toolbox
 
 MEDIA = Path(__file__).parent / "fixtures"
+KAIKKI_SAMPLE = MEDIA / "kaikki-sample.jsonl"
 
 
 @pytest.fixture
@@ -28,8 +29,16 @@ def page():
 
 
 @pytest.fixture
-def toolbox(db, page):
-    return Toolbox(media_root=MEDIA, db_path=db, page=page)
+def facts(tmp_path):
+    path = tmp_path / "word_facts.sqlite"
+    with KAIKKI_SAMPLE.open("rb") as source:
+        import_word_facts(source, path)
+    return path
+
+
+@pytest.fixture
+def toolbox(db, page, facts):
+    return Toolbox(media_root=MEDIA, db_path=db, page=page, facts_path=facts)
 
 
 def test_new_words_tool_lists_the_new_words_of_an_episode_by_name(toolbox, db):
@@ -98,3 +107,82 @@ def test_open_page_tool_opens_the_exercise_page_of_an_episode(toolbox, page):
 
     assert page.opened == ["Dark/S01E01"]
     assert result == {"url": "http://127.0.0.1:8000/?episode=Dark/S01E01"}
+
+
+def test_word_facts_tool_gives_the_facts_of_each_word_from_the_data(toolbox):
+    facts = toolbox.call(
+        "word_facts",
+        {
+            "words": [
+                {"base_form": "aufgeben", "word_type": "VERB"},
+                {"base_form": "Mordkommission", "word_type": "NOUN"},
+            ]
+        },
+    )
+
+    assert facts == [
+        {
+            "base_form": "aufgeben",
+            "meaning": "to give up, to quit; to post (a letter)",
+            "meaning_status": "checked",
+            "gender": None,
+            "plural": None,
+            "verb_forms": {
+                "present": "gibt auf",
+                "past": "gab auf",
+                "participle": "aufgegeben",
+                "auxiliary": "haben",
+            },
+            "parts": [],
+        },
+        {
+            "base_form": "Mordkommission",
+            "meaning": None,
+            "meaning_status": None,
+            "gender": "feminine",
+            "plural": "Mordkommissionen",
+            "verb_forms": None,
+            "parts": ["Mord", "Kommission"],
+        },
+    ]
+
+
+@pytest.mark.parametrize(
+    "words",
+    [
+        ["Hund"],
+        [{"base_form": "Hund"}],
+        [{"base_form": "Hund", "word_type": 1}],
+        [{"base_form": "Hund", "word_type": "NOUN", "extra": "x"}],
+    ],
+)
+def test_word_facts_tool_rejects_words_that_are_not_base_form_and_word_type(
+    toolbox, words
+):
+    with pytest.raises(ToolError, match="words"):
+        toolbox.call("word_facts", {"words": words})
+
+
+def test_add_word_meaning_tool_stores_an_agent_meaning_marked_unchecked(toolbox):
+    result = toolbox.call(
+        "add_word_meaning", {"base_form": "Mordkommission", "meaning": "homicide squad"}
+    )
+
+    assert result["meaning"] == "homicide squad"
+    assert result["meaning_status"] == "unchecked"
+    [facts] = toolbox.call(
+        "word_facts", {"words": [{"base_form": "Mordkommission", "word_type": "NOUN"}]}
+    )
+    assert (facts["meaning"], facts["meaning_status"]) == ("homicide squad", "unchecked")
+
+
+def test_add_word_meaning_tool_cannot_replace_a_meaning_from_the_data(toolbox):
+    with pytest.raises(ToolError, match="word facts data"):
+        toolbox.call("add_word_meaning", {"base_form": "Hund", "meaning": "cat"})
+
+
+def test_word_facts_tool_without_imported_data_is_a_tool_error(db, page, tmp_path):
+    toolbox = Toolbox(MEDIA, db, page, facts_path=tmp_path / "missing.sqlite")
+
+    with pytest.raises(ToolError, match="import-word-facts"):
+        toolbox.call("word_facts", {"words": [{"base_form": "Hund", "word_type": "NOUN"}]})

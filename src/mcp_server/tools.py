@@ -8,12 +8,14 @@ from typing import Protocol
 
 from core import (
     VocabStore,
+    WordFacts,
     analyse,
     find_episode,
     new_words,
     read_lines,
     subtitle_file,
 )
+from core.word_facts import DEFAULT_FACTS
 from web.launch import PageError
 
 _EPISODE = {
@@ -21,7 +23,17 @@ _EPISODE = {
     "description": 'The Episode name under the media folder, for example "Dark/S01E03".',
 }
 
-_JSON_TYPES = {"string": str, "array": list}
+_WORD = {
+    "type": "object",
+    "properties": {
+        "base_form": {"type": "string"},
+        "word_type": {"type": "string"},
+    },
+    "required": ["base_form", "word_type"],
+    "additionalProperties": False,
+}
+
+_JSON_TYPES = {"string": str, "array": list, "object": dict}
 
 
 class Page(Protocol):
@@ -58,21 +70,37 @@ class Tool:
                 f"missing {sorted(missing)}, not known {sorted(extra)}"
             )
         for key, value in arguments.items():
-            schema = self.properties[key]
-            if not isinstance(value, _JSON_TYPES[schema["type"]]):
-                raise ToolError(f"{key} must be of type {schema['type']}")
-            if schema["type"] == "array" and not all(
-                isinstance(item, str) for item in value
-            ):
-                raise ToolError(f"{key} must be a list of strings")
+            _check_value(key, value, self.properties[key])
+
+
+def _check_value(name: str, value, schema: dict) -> None:
+    """Check a value against the small part of JSON Schema the tools use."""
+    if not isinstance(value, _JSON_TYPES[schema["type"]]):
+        raise ToolError(f"{name} must be of type {schema['type']}")
+    if schema["type"] == "array":
+        for item in value:
+            _check_value(f"each item of {name}", item, schema["items"])
+    if schema["type"] == "object":
+        fields = schema["properties"]
+        if set(value) != set(fields):
+            raise ToolError(f"{name} must have exactly {sorted(fields)}")
+        for key, field_value in value.items():
+            _check_value(f"{key} in {name}", field_value, fields[key])
 
 
 class Toolbox:
     """The tools the agents can call. Each one is a thin call into the core."""
 
-    def __init__(self, media_root: Path | str, db_path: Path | str, page: Page):
+    def __init__(
+        self,
+        media_root: Path | str,
+        db_path: Path | str,
+        page: Page,
+        facts_path: Path | str = DEFAULT_FACTS,
+    ):
         self._media_root = Path(media_root)
         self._db_path = Path(db_path)
+        self._facts_path = Path(facts_path)
         self._page = page
         self.tools = {
             tool.name: tool
@@ -111,6 +139,40 @@ class Toolbox:
                     "type), in the order they are first heard.",
                     {"episode": _EPISODE},
                     self._new_words,
+                ),
+                Tool(
+                    "word_facts",
+                    "Give the word facts of each word from the offline "
+                    "Wiktionary data: meaning, gender, plural and verb forms "
+                    "(present, past, participle, auxiliary). A noun compound "
+                    "missing from the data is split into parts, with gender "
+                    "and plural from its last part and no meaning. "
+                    'meaning_status is "checked" for a meaning from the data '
+                    'and "unchecked" for one an agent added.',
+                    {
+                        "words": {
+                            "type": "array",
+                            "items": _WORD,
+                            "description": "Words as new_words gives them, for "
+                            'example [{"base_form": "geben", "word_type": "VERB"}].',
+                        }
+                    },
+                    self._word_facts,
+                ),
+                Tool(
+                    "add_word_meaning",
+                    "Store a short English meaning for a word that has no "
+                    "meaning in the word facts data, for example a split "
+                    'compound. It is marked "unchecked". A meaning from the '
+                    "data cannot be replaced.",
+                    {
+                        "base_form": {"type": "string", "description": "The Base form."},
+                        "meaning": {
+                            "type": "string",
+                            "description": 'A short English meaning, for example "homicide squad".',
+                        },
+                    },
+                    self._add_word_meaning,
                 ),
                 Tool(
                     "open_page",
@@ -157,6 +219,18 @@ class Toolbox:
     def _new_words(self, episode: str) -> list[dict]:
         with closing(VocabStore(self._db_path)) as store:
             return [asdict(word) for word in new_words(self._episode(episode), store)]
+
+    def _word_facts(self, words: list[dict]) -> list[dict]:
+        with closing(WordFacts(self._facts_path)) as facts:
+            return [
+                asdict(facts.lookup(word["base_form"], word["word_type"]))
+                for word in words
+            ]
+
+    def _add_word_meaning(self, base_form: str, meaning: str) -> dict:
+        with closing(WordFacts(self._facts_path)) as facts:
+            facts.add_meaning(base_form, meaning)
+            return asdict(facts.lookup(base_form))
 
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}
