@@ -109,3 +109,16 @@ def test_a_port_used_by_another_program_is_an_error(page, port, browser):
         other.server_close()
 
     assert browser.opened == []
+
+
+def test_a_program_that_listens_on_all_addresses_is_an_error(page, port, browser):
+    other = socket.socket()
+    other.bind(("0.0.0.0", port))
+    other.listen()
+    try:
+        with pytest.raises(PageError, match="another program"):
+            page.open("Dark/S01E01")
+    finally:
+        other.close()
+
+    assert browser.opened == []
