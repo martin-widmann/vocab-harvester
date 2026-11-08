@@ -20,8 +20,10 @@ FILE_TOOLS = {
 }
 SHELL_TOOLS = {"Bash", "PowerShell"}
 
-# The parts of a shell command that can be a path.
+# The parts of a shell command that can be a path: each bare word, and the
+# full text in quotes, because a quoted path can have spaces in it.
 _PATH_LIKE = re.compile(r"[^\s\"'`;|&<>()=,]+")
+_QUOTED = re.compile(r"\"([^\"]+)\"|'([^']+)'")
 
 # A Git Bash drive path such as /c/Users/... is C:/Users/... on Windows.
 _BASH_DRIVE = re.compile(r"^/([a-zA-Z])(/|$)")
@@ -42,13 +44,18 @@ def blocked_reason(event: dict, data_dir: Path, media_root: Path) -> str | None:
     if tool in FILE_TOOLS:
         candidates = [str(tool_input.get(FILE_TOOLS[tool]) or "")]
     elif tool in SHELL_TOOLS:
-        candidates = _PATH_LIKE.findall(str(tool_input.get("command") or ""))
+        candidates = _shell_paths(str(tool_input.get("command") or ""))
     else:
         return None
     for candidate in candidates:
         if candidate and _is_data_file(cwd, candidate, data_dir, media_root):
             return REASON.format(path=candidate)
     return None
+
+
+def _shell_paths(command: str) -> list[str]:
+    quoted = [first or second for first, second in _QUOTED.findall(command)]
+    return _PATH_LIKE.findall(command) + quoted
 
 
 def _is_data_file(cwd: Path, candidate: str, data_dir: Path, media_root: Path) -> bool:

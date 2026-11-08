@@ -83,6 +83,34 @@ def test_a_shell_command_with_the_absolute_data_path_is_blocked(folders):
     assert reason(folders, "Bash", command=f'cp x.sqlite "{data}\\vocab.sqlite"')
 
 
+@pytest.fixture
+def spaced_folders(tmp_path):
+    root = tmp_path / "John Doe" / "vh"
+    data, media = root / "data", root / "media"
+    data.mkdir(parents=True)
+    media.mkdir()
+    return root, data, media
+
+
+@pytest.mark.parametrize("quote", ['"', "'"])
+@pytest.mark.parametrize("tool", ["Bash", "PowerShell"])
+def test_a_quoted_data_path_with_spaces_is_blocked(spaced_folders, tool, quote):
+    _, data, _ = spaced_folders
+    command = f"rm {quote}{data / 'vocab.sqlite'}{quote}"
+
+    assert reason(spaced_folders, tool, command=command)
+
+
+def test_a_quoted_relative_data_path_with_spaces_is_blocked(spaced_folders):
+    command = 'Remove-Item "data/my lessons/lesson 1.json"'
+
+    assert reason(spaced_folders, "PowerShell", command=command)
+
+
+def test_a_quoted_message_that_is_not_a_path_is_not_blocked(spaced_folders):
+    assert reason(spaced_folders, "Bash", command='git commit -m "fix the parser"') is None
+
+
 @pytest.mark.parametrize(
     "command", ["python -m pytest -q", "git status", "ls src/core", "grep -r metadata src"]
 )
