@@ -83,12 +83,10 @@ def extract_subtitles(video_path: Path | str, srt_path: Path | str) -> Path:
     target = Path(srt_path)
     ffmpeg = _ffmpeg()
     track = _german_track(ffmpeg, video)
+    temp_srt = None
     try:
         handle, temp_srt = tempfile.mkstemp(suffix=".part", dir=target.parent)
         os.close(handle)
-    except OSError as error:
-        raise SubtitleError(f"Cannot write subtitles next to {video.name}: {error}") from error
-    try:
         result = _run(
             [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(video),
              "-map", f"0:{track.index}", "-c:s", "srt", "-f", "srt", temp_srt],
@@ -103,7 +101,8 @@ def extract_subtitles(video_path: Path | str, srt_path: Path | str) -> Path:
     except OSError as error:
         raise SubtitleError(f"Cannot write subtitles next to {video.name}: {error}") from error
     finally:
-        Path(temp_srt).unlink(missing_ok=True)
+        if temp_srt is not None:
+            Path(temp_srt).unlink(missing_ok=True)
     return target
 
 
