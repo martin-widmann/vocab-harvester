@@ -1,0 +1,14 @@
+{
+  "session_id": "session_20251112_100201_ee7ad92d",
+  "status": "pending_review",
+  "created_at": "2025-11-12T10:02:01.324522",
+  "completed_at": "2025-11-12T10:02:07.197946",
+  "error_message": null,
+  "statistics": {
+    "total_words_processed": 6,
+    "words_added": 6,
+    "words_translated": 5,
+    "words_failed": 0
+  },
+  "text_preview": "Ich möchte einen Kaffee trinken. Das Wetter ist heute schön."
+}

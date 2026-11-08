@@ -57,3 +57,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Local notes
+problems_vocabharvester.md

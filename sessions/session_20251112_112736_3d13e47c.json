@@ -1,0 +1,14 @@
+{
+  "session_id": "session_20251112_112736_3d13e47c",
+  "status": "pending_review",
+  "created_at": "2025-11-12T11:27:36.899089",
+  "completed_at": "2025-11-12T11:27:41.088316",
+  "error_message": null,
+  "statistics": {
+    "total_words_processed": 4,
+    "words_added": 4,
+    "words_translated": 4,
+    "words_failed": 0
+  },
+  "text_preview": "Der Hund läuft schnell."
+}
