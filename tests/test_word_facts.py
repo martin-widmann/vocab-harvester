@@ -179,3 +179,34 @@ def test_word_facts_that_were_never_imported_are_an_error_that_tells_how_to_impo
         WordFacts(path)
 
     assert not path.exists()
+
+
+def test_blank_lines_in_the_kaikki_data_are_skipped(tmp_path):
+    path = tmp_path / "word_facts.sqlite"
+    lines = SAMPLE.read_bytes().splitlines(keepends=True)
+
+    count = import_word_facts([lines[1], b"\n", b"  \r\n", lines[2]], path)
+
+    assert count == 2
+
+
+def test_splitting_a_long_word_of_many_short_parts_stays_fast(tmp_path):
+    path = tmp_path / "word_facts.sqlite"
+    entry = '{{"word": "{0}", "pos": "noun", "senses": [{{"glosses": ["x"], "tags": ["neuter"]}}]}}'
+    nouns = ["Abe", "Bea", "Eab", "Abeb", "Beab"]
+    import_word_facts([entry.format(noun) for noun in nouns], path)
+    facts = WordFacts(path)
+    calls = 0
+    real_entry = facts._entry
+
+    def counted_entry(*args):
+        nonlocal calls
+        calls += 1
+        return real_entry(*args)
+
+    facts._entry = counted_entry
+
+    compound = facts.lookup("Abeabeabeabeabeabeabeabeabeabeabeabeabeabeabez", "NOUN")
+
+    assert compound.parts == []
+    assert calls < 20_000
