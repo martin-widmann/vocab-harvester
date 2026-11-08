@@ -99,16 +99,12 @@ class PageServer:
 
     def _probe(self) -> str:
         """"free", "ours" if the web server listens, or "other" for another program."""
-        with socket.socket() as probe:
-            if sys.platform != "win32":
-                # Else a port that just closed (TIME_WAIT) looks in use. On
-                # Windows this option would let two servers share the port.
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                probe.bind(("127.0.0.1", self._port))
-                return "free"
-            except OSError:
-                pass  # Something listens on the port.
+        # A connect and not a bind: on Windows a bind to 127.0.0.1 succeeds
+        # even when another program listens on all addresses (0.0.0.0).
+        try:
+            socket.create_connection(("127.0.0.1", self._port), timeout=2).close()
+        except OSError:
+            return "free"  # Nothing listens on the port.
         url = f"http://127.0.0.1:{self._port}/openapi.json"
         try:
             with urllib.request.urlopen(url, timeout=5) as response:
