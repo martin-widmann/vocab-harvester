@@ -93,6 +93,8 @@ def import_word_facts(source: Iterable[bytes | str], path: Path | str) -> int:
             db.execute("DELETE FROM entries")
             count = 0
             for raw in source:
+                if not raw.strip():
+                    continue
                 row = _entry_row(json.loads(raw))
                 if row is not None:
                     db.execute(
