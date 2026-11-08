@@ -23,6 +23,9 @@ SHELL_TOOLS = {"Bash", "PowerShell"}
 # The parts of a shell command that can be a path.
 _PATH_LIKE = re.compile(r"[^\s\"'`;|&<>()=,]+")
 
+# A Git Bash drive path such as /c/Users/... is C:/Users/... on Windows.
+_BASH_DRIVE = re.compile(r"^/([a-zA-Z])(/|$)")
+
 REASON = (
     "{path} is a data file. Data files change only through an MCP tool of "
     "the german-media-learning plugin, never by a direct write."
@@ -47,8 +50,11 @@ def blocked_reason(event: dict, data_dir: Path, media_root: Path) -> str | None:
 
 
 def _is_data_file(cwd: Path, candidate: str, data_dir: Path, media_root: Path) -> bool:
+    candidate = candidate.replace("\\", "/")
+    if sys.platform == "win32":
+        candidate = _BASH_DRIVE.sub(r"\1:/", candidate)
     try:
-        path = (cwd / candidate.replace("\\", "/")).resolve()
+        path = (cwd / candidate).resolve()
     except (OSError, ValueError):
         return False
     if path.is_relative_to(data_dir.resolve()):

@@ -119,3 +119,12 @@ def test_the_hook_script_allows_other_writes_with_exit_code_0(folders):
     )
 
     assert hook.returncode == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Git Bash drive paths")
+def test_a_git_bash_drive_path_to_the_data_folder_is_blocked(folders):
+    _, data, _ = folders
+    drive, rest = str(data).split(":", 1)
+    bash_path = f"/{drive.lower()}{rest}".replace("\\", "/")
+
+    assert reason(folders, "Bash", command=f"rm {bash_path}/vocab.sqlite")
