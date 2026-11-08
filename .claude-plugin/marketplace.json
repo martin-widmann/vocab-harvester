@@ -1,0 +1,16 @@
+{
+  "name": "vocab-harvester",
+  "owner": {
+    "name": "Martin Widmann"
+  },
+  "metadata": {
+    "description": "The German Media Learning plugin, from this repo."
+  },
+  "plugins": [
+    {
+      "name": "german-media-learning",
+      "source": "./",
+      "description": "Learn German vocab and grammar from German series and films."
+    }
+  ]
+}

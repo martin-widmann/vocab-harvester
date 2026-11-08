@@ -4,7 +4,7 @@ The names exported here are the public interface. The MCP server and the
 web server are thin adapters over it.
 """
 
-from core.episode import NewWord, find_episode, new_words
+from core.episode import NewWord, find_episode, new_words, subtitle_file
 from core.subtitles import Line, read_lines
 from core.vocab_store import VocabStore, WordState
 from core.word_analysis import Word, analyse
@@ -22,4 +22,5 @@ __all__ = [
     "new_words",
     "read_lines",
     "record_answer",
+    "subtitle_file",
 ]
