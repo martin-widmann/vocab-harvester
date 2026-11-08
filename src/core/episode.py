@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.subtitles import read_lines
+from core.subtitles import VIDEO_SUFFIXES, extract_subtitles, read_lines
 from core.vocab_store import VocabStore
 from core.word_analysis import analyse
 
@@ -38,13 +38,26 @@ def find_episode(media_root: Path | str, name: str) -> Path:
 
 
 def subtitle_file(episode_folder: Path | str) -> Path:
-    """The original .srt of an Episode folder (not the tagged one)."""
+    """The original .srt of an Episode folder (not the tagged one).
+
+    When the folder has no .srt but one video container, its German subtitle
+    track is extracted to an .srt next to the video, once.
+    """
     folder = Path(episode_folder)
     srts = [
         path for path in folder.glob("*.srt") if not path.name.endswith(".tagged.srt")
     ]
-    if len(srts) != 1:
+    if len(srts) == 1:
+        return srts[0]
+    if srts:
+        raise ValueError(f"Expected one .srt file in {folder}, found {len(srts)}")
+    videos = [
+        path for path in folder.iterdir()
+        if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES
+    ]
+    if len(videos) != 1:
         raise ValueError(
-            f"Expected one .srt file in {folder}, found {len(srts)}"
+            f"Expected one .srt file or one video in {folder}, "
+            f"found no .srt and {len(videos)} videos"
         )
-    return srts[0]
+    return extract_subtitles(videos[0], videos[0].with_suffix(".srt"))
