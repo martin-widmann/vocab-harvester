@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import pytest
+from fakes import FakeClock, FakeLanguageTool
 
 from core import VocabStore, WordState, build_frequency_table, import_word_facts
+from core.language_tool import LanguageToolError
 from mcp_server.tools import ToolError, Toolbox
 
 MEDIA = Path(__file__).parent / "fixtures"
@@ -46,9 +48,20 @@ def frequency(tmp_path):
 
 
 @pytest.fixture
-def toolbox(db, page, facts, frequency):
+def language_tool():
+    return FakeLanguageTool()
+
+
+@pytest.fixture
+def toolbox(db, page, facts, frequency, language_tool):
     return Toolbox(
-        media_root=MEDIA, db_path=db, page=page, facts_path=facts, frequency_path=frequency
+        media_root=MEDIA,
+        db_path=db,
+        page=page,
+        facts_path=facts,
+        frequency_path=frequency,
+        language_tool=language_tool,
+        clock=FakeClock(),
     )
 
 
@@ -242,3 +255,92 @@ def test_pick_lesson_words_tool_without_a_frequency_table_is_a_tool_error(
 
     with pytest.raises(ToolError, match="build-frequency"):
         toolbox.call("pick_lesson_words", {"episode": "Dark/S01E01"})
+
+
+def test_add_sentences_tool_stores_the_sentences_languagetool_passes(toolbox, db):
+    VocabStore(db).add("aufgeben", "VERB", WordState.UNKNOWN)
+
+    results = toolbox.call(
+        "add_sentences",
+        {
+            "sentences": [
+                {"base_form": "aufgeben", "number": 1, "sentence": "Er gibt nie auf."},
+                {"base_form": "aufgeben", "number": 2, "sentence": "Das ist falsch."},
+            ]
+        },
+    )
+
+    assert results == [
+        {
+            "base_form": "aufgeben",
+            "number": 1,
+            "sentence": "Er gibt nie auf.",
+            "status": "stored",
+            "problems": [],
+            "retries_left": 0,
+        },
+        {
+            "base_form": "aufgeben",
+            "number": 2,
+            "sentence": "Das ist falsch.",
+            "status": "retry",
+            "problems": ["Fehler: falsch"],
+            "retries_left": 3,
+        },
+    ]
+    assert VocabStore(db).example_sentences("aufgeben") == {1: "Er gibt nie auf."}
+
+
+def test_failed_sentences_tool_gives_the_list_for_the_learner(toolbox, db):
+    VocabStore(db).add("aufgeben", "VERB", WordState.UNKNOWN)
+    for _ in range(4):
+        toolbox.call(
+            "add_sentences",
+            {"sentences": [{"base_form": "aufgeben", "number": 3, "sentence": "falsch"}]},
+        )
+
+    assert toolbox.call("failed_sentences", {}) == [
+        {
+            "base_form": "aufgeben",
+            "number": 3,
+            "sentence": "falsch",
+            "problems": ["Fehler: falsch"],
+        }
+    ]
+
+
+@pytest.mark.parametrize("number", ["1", 1.0, True])
+def test_add_sentences_tool_needs_a_whole_number(toolbox, db, number):
+    VocabStore(db).add("aufgeben", "VERB", WordState.UNKNOWN)
+
+    with pytest.raises(ToolError, match="integer"):
+        toolbox.call(
+            "add_sentences",
+            {"sentences": [{"base_form": "aufgeben", "number": number, "sentence": "Gut."}]},
+        )
+
+
+def test_add_sentences_tool_for_a_word_that_is_not_unknown_is_a_tool_error(toolbox):
+    with pytest.raises(ToolError, match="not an Unknown or Taught word"):
+        toolbox.call(
+            "add_sentences",
+            {"sentences": [{"base_form": "Polizei", "number": 1, "sentence": "Gut."}]},
+        )
+
+
+def test_add_sentences_tool_when_languagetool_fails_is_a_tool_error(
+    toolbox, db, language_tool
+):
+    VocabStore(db).add("aufgeben", "VERB", WordState.UNKNOWN)
+
+    def no_network(text):
+        raise LanguageToolError("LanguageTool cannot be reached")
+
+    language_tool.check = no_network
+
+    with pytest.raises(ToolError, match="cannot be reached"):
+        toolbox.call(
+            "add_sentences",
+            {"sentences": [{"base_form": "aufgeben", "number": 1, "sentence": "Gut."}]},
+        )
+    assert VocabStore(db).example_sentences("aufgeben") == {}

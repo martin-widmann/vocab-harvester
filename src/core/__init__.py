@@ -7,6 +7,13 @@ web server are thin adapters over it.
 from core.episode import NewWord, find_episode, new_words, subtitle_file
 from core.frequency import FrequencyTable, build_frequency_table
 from core.lesson_words import LessonWord, pick_lesson_words
+from core.sentences import (
+    Issue,
+    SentenceChecker,
+    SentenceResult,
+    SentenceToStore,
+    add_sentences,
+)
 from core.subtitles import Line, SubtitleError, extract_subtitles, read_lines
 from core.vocab_store import VocabStore, WordState
 from core.word_analysis import Word, analyse
@@ -17,14 +24,19 @@ __all__ = [
     "CHECK_KEYS",
     "Facts",
     "FrequencyTable",
+    "Issue",
     "LessonWord",
     "Line",
     "NewWord",
+    "SentenceChecker",
+    "SentenceResult",
+    "SentenceToStore",
     "SubtitleError",
     "VocabStore",
     "Word",
     "WordFacts",
     "WordState",
+    "add_sentences",
     "analyse",
     "build_frequency_table",
     "extract_subtitles",
