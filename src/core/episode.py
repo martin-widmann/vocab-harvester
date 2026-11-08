@@ -55,7 +55,10 @@ def subtitle_file(episode_folder: Path | str) -> Path:
         raise ValueError(f"Expected one .srt file in {folder}, found {len(srts)}")
     videos = [
         path for path in folder.iterdir()
-        if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES
+        if path.is_file()
+        and path.suffix.lower() in VIDEO_SUFFIXES
+        # Hidden files, such as the "._" files macOS puts next to each file.
+        and not path.name.startswith(".")
     ]
     if len(videos) != 1:
         raise ValueError(
