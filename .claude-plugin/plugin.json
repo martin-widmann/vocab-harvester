@@ -1,0 +1,28 @@
+{
+  "name": "german-media-learning",
+  "version": "0.1.0",
+  "description": "Learn German vocab and grammar from German series and films. Start it with: claude --agent tutor",
+  "author": {
+    "name": "Martin Widmann"
+  },
+  "repository": "https://github.com/martin-widmann/vocab-harvester",
+  "mcpServers": {
+    "learning": {
+      "command": "python",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp_server.py"]
+    }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/data_guard.py\" --data-dir \"${CLAUDE_PLUGIN_ROOT}/data\" --media-root \"${CLAUDE_PLUGIN_ROOT}/media\""
+          }
+        ]
+      }
+    ]
+  }
+}
