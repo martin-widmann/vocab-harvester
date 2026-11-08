@@ -1,6 +1,7 @@
 """Word analysis: reduce the text of a Line to Base forms with spaCy."""
 
 import re
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import cache
 
@@ -39,8 +40,14 @@ def analyse(text: str) -> list[Word]:
     Separable verbs are joined: "Er gab nicht auf" gives "aufgeben".
     Names, places and filler sounds are left out.
     """
-    doc = _nlp()(_MARKUP.sub("", text).replace("\n", " "))
-    return [_word(token) for token in doc if _is_vocab(token)]
+    return next(analyse_all([text]))
+
+
+def analyse_all(texts: Iterable[str]) -> Iterator[list[Word]]:
+    """Analyse many texts in batches; give the Words of each text in order."""
+    cleaned = (_MARKUP.sub("", text).replace("\n", " ") for text in texts)
+    for doc in _nlp().pipe(cleaned, batch_size=1000):
+        yield [_word(token) for token in doc if _is_vocab(token)]
 
 
 def _is_vocab(token: Token) -> bool:

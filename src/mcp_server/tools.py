@@ -7,14 +7,18 @@ from pathlib import Path
 from typing import Protocol
 
 from core import (
+    FrequencyTable,
     VocabStore,
     WordFacts,
     analyse,
     find_episode,
     new_words,
+    pick_lesson_words,
     read_lines,
     subtitle_file,
 )
+from core.frequency import DEFAULT_FREQUENCY
+from core.subtitles import Line
 from core.word_facts import DEFAULT_FACTS
 from web.launch import PageError
 
@@ -97,10 +101,12 @@ class Toolbox:
         db_path: Path | str,
         page: Page,
         facts_path: Path | str = DEFAULT_FACTS,
+        frequency_path: Path | str = DEFAULT_FREQUENCY,
     ):
         self._media_root = Path(media_root)
         self._db_path = Path(db_path)
         self._facts_path = Path(facts_path)
+        self._frequency_path = Path(frequency_path)
         self._page = page
         self.tools = {
             tool.name: tool
@@ -175,6 +181,19 @@ class Toolbox:
                     self._add_word_meaning,
                 ),
                 Tool(
+                    "pick_lesson_words",
+                    "Pick the words the Lesson of an Episode teaches: up to 20 "
+                    "Unknown words of the Episode, the most frequent first "
+                    "(count from the subtitle frequency table; words not in the "
+                    "table come last, with count null). Each word has the "
+                    "Section (1, 2 or 3, for about 0-15, 15-30 and 30-45 "
+                    "minutes) and the Line where it is first heard, and its "
+                    "Seen form there. Use it after the Word Knowledge Check. "
+                    "It changes no word state.",
+                    {"episode": _EPISODE},
+                    self._pick_lesson_words,
+                ),
+                Tool(
                     "open_page",
                     "Start the web server if it is not running and open the "
                     "exercise page of an Episode in the browser, on its Check tab.",
@@ -199,13 +218,7 @@ class Toolbox:
 
     def _parse_subtitles(self, episode: str) -> list[dict]:
         return [
-            {
-                "number": line.number,
-                "start": line.start.total_seconds(),
-                "end": line.end.total_seconds(),
-                "text": line.text,
-            }
-            for line in read_lines(subtitle_file(self._episode(episode)))
+            _line(line) for line in read_lines(subtitle_file(self._episode(episode)))
         ]
 
     def _split_words(self, text: str) -> list[dict]:
@@ -232,5 +245,33 @@ class Toolbox:
             facts.add_meaning(base_form, meaning)
             return asdict(facts.lookup(base_form))
 
+    def _pick_lesson_words(self, episode: str) -> list[dict]:
+        folder = self._episode(episode)
+        with (
+            closing(FrequencyTable(self._frequency_path)) as frequency,
+            closing(VocabStore(self._db_path)) as store,
+        ):
+            words = pick_lesson_words(folder, store, frequency)
+        return [
+            {
+                "base_form": word.base_form,
+                "word_type": word.word_type,
+                "count": word.count,
+                "section": word.section,
+                "seen_form": word.seen_form,
+                "line": _line(word.line),
+            }
+            for word in words
+        ]
+
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}
+
+
+def _line(line: Line) -> dict:
+    return {
+        "number": line.number,
+        "start": line.start.total_seconds(),
+        "end": line.end.total_seconds(),
+        "text": line.text,
+    }
