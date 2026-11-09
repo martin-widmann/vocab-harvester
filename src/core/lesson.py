@@ -28,7 +28,7 @@ from core.lesson_words import SECTION_COUNT, SECTION_LENGTH, LessonWord, pick_le
 from core.sentences import MAX_RETRIES, SENTENCES_PER_WORD, SentenceChecker
 from core.subtitles import Line, read_lines
 from core.episode import subtitle_file
-from core.vocab_store import VocabStore
+from core.vocab_store import EpisodeLine, VocabStore
 from core.word_analysis import names
 from core.word_facts import WordFacts
 
@@ -279,6 +279,11 @@ def write_lesson(
     ]
     for word in sorted(words, key=lambda word: word.line.number):
         sections[word.section - 1]["words"].append(_word(word, store, facts))
+        # The episode Line stays out of the Lesson file (no spoilers before
+        # watching); the vocab store keeps it for the first review.
+        store.keep_episode_line(
+            word.base_form, EpisodeLine(episode, word.line.number, _clean(word.line.text))
+        )
     if previous is not None:
         for section, old in zip(sections, previous["sections"]):
             section["words"] = old["words"]

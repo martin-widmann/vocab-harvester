@@ -41,6 +41,13 @@ from core.lesson import (
 )
 from core.lesson_words import LessonWord, pick_lesson_words
 from core.results import Finished, Result, TopicResult, check_answer, finish_lesson, lesson_for_page
+from core.review import (
+    Graded,
+    ReviewCard,
+    SystemDateClock,
+    due_cards,
+    grade_card,
+)
 from core.sentences import (
     Issue,
     LanguageToolBusy,
@@ -52,13 +59,20 @@ from core.sentences import (
     failed_sentences,
 )
 from core.subtitles import Line, SubtitleError, extract_subtitles, read_lines
-from core.vocab_store import VocabStore, WordState
+from core.vocab_store import EpisodeLine, Teaching, VocabStore, WordState
 from core.word_analysis import Word, analyse
 from core.word_check import CHECK_KEYS, record_answer
 from core.word_facts import Facts, WordFacts, import_word_facts
 
 __all__ = [
     "CHECK_KEYS",
+    "EpisodeLine",
+    "Graded",
+    "ReviewCard",
+    "SystemDateClock",
+    "Teaching",
+    "due_cards",
+    "grade_card",
     "OPEN_KINDS",
     "Curriculum",
     "Exercise",

@@ -9,12 +9,13 @@ Learned when their Lesson exercises passed.
 
 import threading
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 
 from core.curriculum import Curriculum, TopicState
 from core.grammar_topics import GAP, ExerciseKind
 from core.lesson import ARTICLE_KIND, ARTICLES, OPEN_KINDS, LessonFiles
-from core.vocab_store import VocabStore, WordState
+from core.vocab_store import Teaching, VocabStore, WordState
 
 # A Grammar topic's Lesson exercises pass when at least this share of them
 # was answered right; an exercise with no answer counts as wrong.
@@ -171,10 +172,13 @@ def finish_lesson(
     *,
     store: VocabStore,
     curriculum: Curriculum,
+    today: date,
 ) -> Finished:
     """Finish a Lesson: update the learner state at once.
 
-    Each Unknown word of the Lesson becomes a Taught word. Each Grammar topic
+    Each Unknown word of the Lesson becomes a Taught word, with the Seen
+    form, meaning and gender from the Lesson file for its reviews; its first
+    review is due the day after `today`. Each Grammar topic
     becomes Seen (if it was Not seen), and Learned when its Lesson exercises
     passed; a topic further on keeps its state. A topic that left the
     Curriculum since the Lesson was written is left out. A Lesson is
@@ -189,7 +193,16 @@ def finish_lesson(
         for section in lesson["sections"]:
             for word in section["words"]:
                 if store.state_of(word["base_form"]) == WordState.UNKNOWN:
-                    store.set_state(word["base_form"], WordState.TAUGHT)
+                    store.teach(
+                        word["base_form"],
+                        Teaching(
+                            lesson["episode"],
+                            today,
+                            word.get("seen_form"),
+                            word.get("meaning"),
+                            word.get("gender"),
+                        ),
+                    )
                     taught.append(word["base_form"])
         in_curriculum = {status.topic.id for status in curriculum.topics()}
         topics = []

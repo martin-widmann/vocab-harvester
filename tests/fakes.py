@@ -1,5 +1,7 @@
 """Fakes for the adapters at the edges: LanguageTool, the clock and the grader runner."""
 
+from datetime import timedelta
+
 from core import Issue
 
 
@@ -47,3 +49,16 @@ class FakeGraderRunner:
     def run(self, prompt: str) -> str:
         self.prompts.append(prompt)
         return self.replies.pop(0)
+
+
+class FakeDateClock:
+    """The date and time the review scheduler sees; tests move it on."""
+
+    def __init__(self, now):
+        self.time = now
+
+    def now(self):
+        return self.time
+
+    def advance(self, **delta):
+        self.time += timedelta(**delta)
