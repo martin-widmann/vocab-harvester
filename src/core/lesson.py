@@ -11,11 +11,19 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from pathlib import Path
 
 from core.curriculum import Curriculum
 from core.frequency import FrequencyTable
-from core.grammar_topics import GAP, Exercise, ExerciseStock, check_exercise
+from core.grammar_topics import (
+    GAP,
+    MAX_TEXT_LENGTH,
+    Exercise,
+    ExerciseKind,
+    ExerciseStock,
+    check_exercise,
+)
 from core.lesson_words import SECTION_COUNT, SECTION_LENGTH, LessonWord, pick_lesson_words, section_of
 from core.sentences import MAX_RETRIES, SENTENCES_PER_WORD, SentenceChecker
 from core.subtitles import Line, read_lines
@@ -34,6 +42,20 @@ MAX_EXERCISES = 4
 ARTICLE_KIND = "article"
 ARTICLES = {"masculine": "der", "feminine": "die", "neuter": "das"}
 
+
+class OpenKind(str, Enum):
+    """A Lesson exercise with an open answer; no script can check it.
+
+    Its sentence is the task and its answer one correct answer.
+    """
+
+    SENTENCE = "sentence"  # Write your own sentence: LanguageTool, then the grader.
+    TRANSLATE = "translate"  # Translate the English sentence into German: the grader.
+    EXPLAIN = "explain"  # Explain why: the grader.
+
+
+OPEN_KINDS = {kind.value for kind in OpenKind}
+
 _FILE_NAME = re.compile(r"lesson-(\d+)\.json")
 _MARKUP = re.compile(r"<[^>]*>|\{[^}]*\}")
 _WORD = re.compile(r"\w+")
@@ -41,10 +63,13 @@ _WORD = re.compile(r"\w+")
 
 @dataclass(frozen=True)
 class LessonExercise:
-    """A Lesson exercise of a Grammar topic: a sentence with one gap "___".
+    """A Lesson exercise of a Grammar topic.
 
-    kind "gap": the learner types the answer; "choice": 2 to 4 options, the
-    answer one of them. The explanation is the short reason a result shows.
+    kind "gap": a sentence with one gap "___"; the learner types the answer.
+    "choice": the same, with 2 to 4 options, the answer one of them. An open
+    kind (OpenKind: "sentence", "translate", "explain") has the task as its
+    sentence, one correct answer and no options; the grader checks it. The
+    explanation is the short reason a result shows.
     """
 
     kind: str
@@ -340,9 +365,7 @@ def _checked_grammar(
                     "to the part with the topic, or use a neutral example"
                 )
         exercise_texts = [
-            text
-            for exercise in part.exercises
-            for text in [_solved(exercise), *exercise.options, exercise.explanation]
+            text for exercise in part.exercises for text in _all_texts(exercise)
         ]
         for text in [part.example, part.rule, *part.cases, *exercise_texts]:
             used = sorted(found for found in episode_names if _has_word(text, found))
@@ -352,7 +375,11 @@ def _checked_grammar(
                     f"({', '.join(used)}); change them so the Lesson does not "
                     "spoil the plot"
                 )
-        solved_texts = [_solved(exercise) for exercise in part.exercises]
+        solved_texts = [
+            text
+            for text in map(_german_text, part.exercises)
+            if text is not None
+        ]
         for text in [part.example, *part.cases, *solved_texts]:
             if _plain(text) in episode_texts:
                 raise ValueError(
@@ -428,8 +455,15 @@ def _check_texts(name: str, part: GrammarPart) -> None:
         raise ValueError(f"{name}: give {MIN_EXERCISES} to {MAX_EXERCISES} exercises")
     solved = set()
     for n, exercise in enumerate(part.exercises, 1):
-        check_exercise(f"{name}: exercise {n}", _stock_form(part.topic_id, exercise))
-        text = _solved(exercise)
+        exercise_name = f"{name}: exercise {n}"
+        kinds = [*(kind.value for kind in ExerciseKind), *(kind.value for kind in OpenKind)]
+        if exercise.kind not in kinds:
+            raise ValueError(f"{exercise_name}: the kind must be one of {', '.join(kinds)}")
+        if exercise.kind in OPEN_KINDS:
+            _check_open_exercise(exercise_name, exercise)
+        else:
+            check_exercise(exercise_name, _stock_form(part.topic_id, exercise))
+        text = (exercise.kind in OPEN_KINDS, exercise.sentence, _solved(exercise))
         if text in solved:
             raise ValueError(f"{name}: exercise {n} is in the Lesson twice")
         solved.add(text)
@@ -452,9 +486,53 @@ def _stock_form(topic_id: str, exercise: LessonExercise) -> Exercise:
     )
 
 
+def _check_open_exercise(name: str, exercise: LessonExercise) -> None:
+    """Reject a malformed open exercise: empty or long texts, a gap, options."""
+    if exercise.options:
+        raise ValueError(f"{name}: an open exercise has no options")
+    texts = {
+        "sentence": exercise.sentence,
+        "answer": exercise.answer,
+        "explanation": exercise.explanation,
+    }
+    for field_name, text in texts.items():
+        if not text:
+            raise ValueError(f"{name}: the {field_name} is empty")
+        if len(text) > MAX_TEXT_LENGTH:
+            raise ValueError(
+                f"{name}: the {field_name} is too long; use at most "
+                f"{MAX_TEXT_LENGTH} characters"
+            )
+        if len(text.splitlines()) > 1:
+            raise ValueError(f"{name}: the {field_name} must be one line")
+        if GAP in text:
+            raise ValueError(f"{name}: an open exercise has no gap {GAP}")
+
+
 def _solved(exercise: LessonExercise) -> str:
     """The exercise sentence with the answer in the gap."""
     return exercise.sentence.replace(GAP, exercise.answer)
+
+
+def _german_text(exercise: LessonExercise) -> str | None:
+    """The German sentence an exercise teaches; None for "explain why".
+
+    For a gap or choice exercise the sentence with the answer in the gap; for
+    a translation or own sentence the correct answer. An "explain why" task
+    and its answer can mix German and English.
+    """
+    if exercise.kind == OpenKind.EXPLAIN.value:
+        return None
+    if exercise.kind in OPEN_KINDS:
+        return exercise.answer
+    return _solved(exercise)
+
+
+def _all_texts(exercise: LessonExercise) -> list[str]:
+    """Every text of an exercise the learner may see."""
+    if exercise.kind in OPEN_KINDS:
+        return [exercise.sentence, exercise.answer, exercise.explanation]
+    return [_solved(exercise), *exercise.options, exercise.explanation]
 
 
 def _check_sentences_stored(store: VocabStore, words: list[LessonWord]) -> None:
@@ -481,10 +559,11 @@ def _check_with_language_tool(checker: SentenceChecker, topics: list[dict]) -> N
             topic["example"],
             *topic["cases"],
             *(
-                exercise["sentence"].replace(GAP, exercise["answer"])
+                _german_text(LessonExercise(**_without_id(exercise)))
                 for exercise in topic["exercises"]
             ),
         ]
+        if text is not None
     ]
     found = [
         f"{text!r}: {'; '.join(problems)}"
@@ -496,6 +575,10 @@ def _check_with_language_tool(checker: SentenceChecker, topics: list[dict]) -> N
             "LanguageTool found problems; write new sentences for them: "
             + " | ".join(found)
         )
+
+
+def _without_id(exercise: dict) -> dict:
+    return {key: value for key, value in exercise.items() if key != "id"}
 
 
 def _clean(text: str) -> str:

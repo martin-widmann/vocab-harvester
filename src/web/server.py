@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from core import (
     Curriculum,
+    Grader,
+    GraderError,
     LessonFiles,
     NewWord,
     VocabStore,
@@ -20,6 +22,9 @@ from core import (
     new_words,
     record_answer,
 )
+from core.claude_grader import ClaudeGrader
+from core.language_tool import LanguageTool, SystemClock
+from core.sentences import SentenceChecker
 
 PAGE = Path(__file__).parent / "page.html"
 APP_TITLE = "German Media Learning"
@@ -36,8 +41,15 @@ class LessonAnswer(BaseModel):
     answer: str
 
 
-def create_app(media_root: Path, db_path: Path) -> FastAPI:
+def create_app(media_root: Path, db_path: Path, grader: Grader | None = None) -> FastAPI:
+    """The web server. `grader` checks open answers; by default the grader agent.
+
+    One grader for the whole server, so the LanguageTool rate limit holds
+    across answers.
+    """
     app = FastAPI(title=APP_TITLE)
+    if grader is None:
+        grader = Grader(ClaudeGrader(), SentenceChecker(LanguageTool(), SystemClock()))
 
     @app.get("/", include_in_schema=False)
     def page() -> FileResponse:
@@ -77,8 +89,14 @@ def create_app(media_root: Path, db_path: Path) -> FastAPI:
     def lesson_answer(number: int, answer: LessonAnswer) -> dict:
         try:
             result = check_answer(
-                LessonFiles.next_to(db_path), number, answer.exercise_id, answer.answer
+                LessonFiles.next_to(db_path),
+                number,
+                answer.exercise_id,
+                answer.answer,
+                grader=grader,
             )
+        except GraderError as error:
+            raise HTTPException(status_code=503, detail=str(error))
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
         return asdict(result)

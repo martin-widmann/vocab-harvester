@@ -649,3 +649,29 @@ def test_write_lesson_tool_rejects_a_lesson_that_does_not_match_the_schema(
         )
 
     assert LessonFiles(db.parent / "lessons").lessons() == []
+
+
+def test_write_lesson_tool_takes_open_exercises_for_the_grader(toolbox, db):
+    ready_for_the_lesson(toolbox, db)
+    translate = {
+        "kind": "translate",
+        "sentence": "We thank the woman.",
+        "answer": "Wir danken der Frau.",
+        "options": [],
+        "explanation": "danken takes the dative.",
+    }
+    dativ = {**LESSON_GRAMMAR[0], "exercises": [*LESSON_GRAMMAR[0]["exercises"], translate]}
+
+    toolbox.call("write_lesson", {"episode": "Dark/S01E01", "grammar": [dativ, LESSON_GRAMMAR[1]]})
+
+    lesson = LessonFiles(db.parent / "lessons").read(1)
+    assert lesson["sections"][0]["grammar"][0]["exercises"][2] == {"id": "dativ:3", **translate}
+
+
+def test_the_write_lesson_schema_offers_the_open_exercise_kinds(toolbox):
+    schema = toolbox.tools["write_lesson"].input_schema
+    exercise = schema["properties"]["grammar"]["items"]["properties"]["exercises"]["items"]
+
+    assert exercise["properties"]["kind"]["enum"] == [
+        "gap", "choice", "sentence", "translate", "explain",
+    ]

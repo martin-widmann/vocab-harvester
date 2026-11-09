@@ -1,4 +1,4 @@
-"""Fakes for the adapters at the edges: LanguageTool and the clock."""
+"""Fakes for the adapters at the edges: LanguageTool, the clock and the grader runner."""
 
 from core import Issue
 
@@ -35,3 +35,15 @@ class FakeClock:
     def sleep(self, seconds: float) -> None:
         self.sleeps.append(seconds)
         self.time += seconds
+
+
+class FakeGraderRunner:
+    """Answers each grader request with the next reply; keeps the requests."""
+
+    def __init__(self, *replies: str):
+        self.replies = list(replies)
+        self.prompts: list[str] = []
+
+    def run(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.replies.pop(0)

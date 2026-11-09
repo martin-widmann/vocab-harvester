@@ -131,3 +131,20 @@ def test_the_lesson_skill_opens_the_page_with_the_open_page_tool():
 
     assert frontmatter(skill)["name"] == "lesson"
     assert f"mcp__plugin_{PLUGIN}_learning__open_page" in skill.read_text("utf-8")
+
+
+def test_there_is_a_grader_agent_that_the_grader_runner_starts():
+    from core.claude_grader import AGENT
+
+    grader = ROOT / "agents" / f"{AGENT}.md"
+
+    assert frontmatter(grader)["name"] == AGENT
+
+
+def test_the_grader_agent_explains_the_prompt_and_the_reply_the_core_uses():
+    text = (ROOT / "agents" / "grader.md").read_text("utf-8")
+
+    for key in ["exercise", "task", "answer", "correct_answer", "right", "correction", "reason"]:
+        assert f"`{key}`" in text
+    for kind in ["sentence", "translate", "explain"]:
+        assert f"`{kind}`" in text

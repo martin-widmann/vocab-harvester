@@ -9,10 +9,11 @@ Learned when their Lesson exercises passed.
 
 import threading
 from dataclasses import dataclass
+from typing import Protocol
 
 from core.curriculum import Curriculum, TopicState
 from core.grammar_topics import GAP, ExerciseKind
-from core.lesson import ARTICLE_KIND, ARTICLES, LessonFiles
+from core.lesson import ARTICLE_KIND, ARTICLES, OPEN_KINDS, LessonFiles
 from core.vocab_store import VocabStore, WordState
 
 # A Grammar topic's Lesson exercises pass when at least this share of them
@@ -31,6 +32,11 @@ class Result:
     right: bool
     correction: str
     reason: str
+
+
+class OpenAnswerGrader(Protocol):
+    def check(self, exercise: dict, answer: str) -> Result:
+        """The result of an open answer to a Lesson exercise (core.grader.Grader)."""
 
 
 @dataclass(frozen=True)
@@ -54,32 +60,67 @@ class Finished:
 
 
 def check_answer(
-    lessons: LessonFiles, number: int, exercise_id: str, answer: str
+    lessons: LessonFiles,
+    number: int,
+    exercise_id: str,
+    answer: str,
+    *,
+    grader: OpenAnswerGrader | None = None,
 ) -> Result:
-    """Check an answer to a fixed-answer exercise and save it to the results file.
+    """Check an answer to a Lesson exercise and save it to the results file.
 
-    The first answer to an exercise stands: a new answer gives its result
-    back and changes nothing. An answer that cannot be checked (a pick-one
-    answer that is not an option) is rejected and not saved.
+    A script checks a fixed answer at once. The grader checks an open answer
+    (own sentence, translation, "explain why"). The first answer to an
+    exercise stands: a new answer gives its result back and changes nothing.
+    An answer that cannot be checked (a pick-one answer that is not an
+    option, or an open answer the grader cannot check) is rejected and not
+    saved.
     """
     with _RESULTS_LOCK:
-        lesson = lessons.read(number)
-        exercise = _exercise(lesson, exercise_id)
-        results = lessons.results(number)
-        saved = results["answers"].get(exercise_id)
+        exercise, saved = _open_for_answer(lessons, number, exercise_id)
         if saved is not None:
-            return Result(saved["right"], saved["correction"], saved["reason"])
-        if results["finished"]:
-            raise ValueError(f"Lesson {number} is finished; it takes no more answers")
-        result = _checked(exercise, answer)
-        results["answers"][exercise_id] = {
-            "answer": answer,
-            "right": result.right,
-            "correction": result.correction,
-            "reason": result.reason,
-        }
-        lessons.write_results(results)
+            return saved
+        if exercise["kind"] not in OPEN_KINDS:
+            result = _checked(exercise, answer)
+            _save(lessons, number, exercise_id, answer, result)
+            return result
+    if grader is None:
+        raise ValueError("Open answers need the grader; this server has none")
+    # The grader takes a while: other answers are checked and saved meanwhile.
+    result = grader.check(exercise, answer)
+    with _RESULTS_LOCK:
+        _, saved = _open_for_answer(lessons, number, exercise_id)
+        if saved is not None:
+            return saved
+        _save(lessons, number, exercise_id, answer, result)
     return result
+
+
+def _open_for_answer(
+    lessons: LessonFiles, number: int, exercise_id: str
+) -> tuple[dict, Result | None]:
+    """The exercise and its saved result; ValueError if it takes no answer now."""
+    exercise = _exercise(lessons.read(number), exercise_id)
+    results = lessons.results(number)
+    saved = results["answers"].get(exercise_id)
+    if saved is not None:
+        return exercise, Result(saved["right"], saved["correction"], saved["reason"])
+    if results["finished"]:
+        raise ValueError(f"Lesson {number} is finished; it takes no more answers")
+    return exercise, None
+
+
+def _save(
+    lessons: LessonFiles, number: int, exercise_id: str, answer: str, result: Result
+) -> None:
+    results = lessons.results(number)
+    results["answers"][exercise_id] = {
+        "answer": answer,
+        "right": result.right,
+        "correction": result.correction,
+        "reason": result.reason,
+    }
+    lessons.write_results(results)
 
 
 def lesson_for_page(lessons: LessonFiles, number: int) -> dict:
