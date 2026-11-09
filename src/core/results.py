@@ -82,7 +82,7 @@ def check_answer(
         if saved is not None:
             return saved
         if exercise["kind"] not in OPEN_KINDS:
-            result = _checked(exercise, answer)
+            result = check_fixed_answer(exercise, answer)
             _save(lessons, number, exercise_id, answer, result)
             return result
     if grader is None:
@@ -252,7 +252,8 @@ def _exercise(lesson: dict, exercise_id: str) -> dict:
     raise ValueError(f"Lesson {lesson['number']} has no exercise {exercise_id!r}")
 
 
-def _checked(exercise: dict, answer: str) -> Result:
+def check_fixed_answer(exercise: dict, answer: str) -> Result:
+    """Check a gap, choice or article answer by script; ValueError if it cannot be checked."""
     expected = exercise["answer"]
     correction = exercise["sentence"].replace(GAP, expected)
     kind = exercise["kind"]

@@ -29,6 +29,7 @@ from core.grammar_topics import (
     add_exercises,
     report_topics,
 )
+from core.grammar_review import GrammarCard, GrammarGraded, answer_grammar, due_grammar
 from core.grader import Grader, GraderError, GraderRunner
 from core.lesson import (
     OPEN_KINDS,
@@ -68,6 +69,10 @@ __all__ = [
     "CHECK_KEYS",
     "EpisodeLine",
     "Graded",
+    "GrammarCard",
+    "GrammarGraded",
+    "answer_grammar",
+    "due_grammar",
     "ReviewCard",
     "SystemDateClock",
     "Teaching",

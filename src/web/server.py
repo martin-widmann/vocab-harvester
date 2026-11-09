@@ -10,14 +10,17 @@ from pydantic import BaseModel
 
 from core import (
     Curriculum,
+    ExerciseStock,
     Grader,
     GraderError,
     LessonFiles,
     NewWord,
     SystemDateClock,
     VocabStore,
+    answer_grammar,
     check_answer,
     due_cards,
+    due_grammar,
     find_episode,
     finish_lesson,
     grade_card,
@@ -42,6 +45,11 @@ class Answer(BaseModel):
 
 class LessonAnswer(BaseModel):
     exercise_id: str
+    answer: str
+
+
+class GrammarAnswer(BaseModel):
+    exercise_id: int
     answer: str
 
 
@@ -161,6 +169,33 @@ def create_app(
             "rating": graded.rating,
             "due": graded.due.isoformat(),
             "article": None if graded.article is None else asdict(graded.article),
+        }
+
+    @app.get("/api/grammar-reviews")
+    def grammar_reviews() -> list[dict]:
+        with (
+            closing(Curriculum(db_path)) as curriculum,
+            closing(ExerciseStock(db_path)) as stock,
+        ):
+            return [asdict(card) for card in due_grammar(curriculum, stock, clock)]
+
+    @app.post("/api/grammar-reviews")
+    def grammar_answer(answer: GrammarAnswer) -> dict:
+        try:
+            with (
+                closing(Curriculum(db_path)) as curriculum,
+                closing(ExerciseStock(db_path)) as stock,
+            ):
+                graded = answer_grammar(
+                    curriculum, stock, answer.exercise_id, answer.answer, clock
+                )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+        return {
+            "topic_id": graded.topic_id,
+            "result": asdict(graded.result),
+            "state": graded.state.value,
+            "weak": graded.weak,
         }
 
     return app

@@ -11,8 +11,23 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
+from fakes import FakeClock, FakeLanguageTool
 
-from core import EpisodeLine, Teaching, VocabStore, WordState
+from core import (
+    Curriculum,
+    EpisodeLine,
+    Exercise,
+    ExerciseStock,
+    FoundTopic,
+    Line,
+    SentenceChecker,
+    Teaching,
+    Topic,
+    VocabStore,
+    WordState,
+    add_exercises,
+    report_topics,
+)
 from web.launch import PageError, PageServer
 
 MEDIA = Path(__file__).parent / "fixtures"
@@ -267,3 +282,52 @@ def test_the_review_tab_gets_the_due_cards_and_grades_one(tmp_path, page, port):
     with pytest.raises(urllib.error.HTTPError) as rejected:
         post_json(base, {"base_form": "Höhle", "rating": "Good", "article": "die"})
     assert rejected.value.code == 400
+
+
+def test_the_review_tab_gets_the_due_grammar_exercises_and_answers_one(
+    tmp_path, page, port
+):
+    db = tmp_path / "vocab.sqlite"
+    with closing(Curriculum(db)) as curriculum, closing(ExerciseStock(db)) as stock:
+        curriculum.approve(
+            curriculum.propose([Topic("konjunktiv-1", "Konjunktiv I", "B2")]).number
+        )
+        line = Line(1, timedelta(seconds=1), timedelta(seconds=2), "Er sagte, er sei müde.")
+        report_topics(curriculum, stock, "Dark/S01E01", [line], [FoundTopic("konjunktiv-1", [1])])
+        add_exercises(
+            curriculum,
+            stock,
+            SentenceChecker(FakeLanguageTool(), FakeClock()),
+            [Exercise("konjunktiv-1", "choice", "Er sagte, er ___ müde.", "sei",
+                      ["sei", "ist"], "Indirekte Rede: Konjunktiv I.")],
+        )
+        curriculum.taught("konjunktiv-1")
+        curriculum.lesson_exercises_passed("konjunktiv-1")
+    page.open("Dark/S01E01")
+    base = f"http://127.0.0.1:{port}/api/grammar-reviews"
+
+    (card,) = get_json(base)
+    assert card == {
+        "exercise_id": card["exercise_id"],
+        "topic_id": "konjunktiv-1",
+        "topic_name": "Konjunktiv I",
+        "kind": "choice",
+        "sentence": "Er sagte, er ___ müde.",
+        "options": ["sei", "ist"],
+        "weak": False,
+    }
+    with pytest.raises(urllib.error.HTTPError) as rejected:
+        post_json(base, {"exercise_id": card["exercise_id"], "answer": "war"})
+    assert rejected.value.code == 400
+    graded = post_json(base, {"exercise_id": card["exercise_id"], "answer": "ist"})
+    assert graded == {
+        "topic_id": "konjunktiv-1",
+        "result": {
+            "right": False,
+            "correction": "Er sagte, er sei müde.",
+            "reason": "Indirekte Rede: Konjunktiv I.",
+        },
+        "state": "Learned",
+        "weak": True,
+    }
+    assert get_json(base) == []

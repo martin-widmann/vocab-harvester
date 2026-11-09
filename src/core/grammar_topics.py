@@ -11,6 +11,7 @@ import json
 import sqlite3
 from collections import Counter
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum
 from pathlib import Path
 
@@ -147,6 +148,15 @@ CREATE TABLE IF NOT EXISTS open_refills (
     episode TEXT NOT NULL,
     failures_left INTEGER NOT NULL
 );
+-- Each grammar review: the exercise it used, on which review day, and its result.
+CREATE TABLE IF NOT EXISTS grammar_reviews (
+    exercise_id INTEGER PRIMARY KEY REFERENCES exercises (id),
+    topic_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    right INTEGER NOT NULL
+);
 """
 
 
@@ -204,6 +214,53 @@ class ExerciseStock:
             ).rowcount
         if not changed:
             raise ValueError(f"Exercise {exercise_id} is not in the stock")
+
+    def exercise(self, exercise_id: int) -> StoredExercise | None:
+        """An exercise of the stock, used or not; None if there is none with this id."""
+        row = self._db.execute(
+            "SELECT id, topic_id, kind, sentence, answer, options, explanation "
+            "FROM exercises WHERE id = ?",
+            (exercise_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        id, topic, kind, sentence, answer, options, why = row
+        return StoredExercise(
+            id, Exercise(topic, kind, sentence, answer, json.loads(options), why)
+        )
+
+    def record_review(
+        self, exercise_id: int, day: date, reviewed_at: str, answer: str, right: bool
+    ) -> None:
+        """A grammar review used the exercise: it leaves the stock, and the review is kept."""
+        with self._db:
+            changed = self._db.execute(
+                "UPDATE exercises SET used = 1 WHERE id = ? AND NOT used",
+                (exercise_id,),
+            ).rowcount
+            if not changed:
+                raise ValueError(f"Exercise {exercise_id} is not in the stock")
+            self._db.execute(
+                "INSERT INTO grammar_reviews "
+                "(exercise_id, topic_id, day, reviewed_at, answer, right) "
+                "SELECT id, topic_id, ?, ?, ?, ? FROM exercises WHERE id = ?",
+                (day.isoformat(), reviewed_at, answer, int(right), exercise_id),
+            )
+
+    def reviewed_on(self, day: date) -> list[str]:
+        """The topic ids of the grammar reviews on a review day, one per review."""
+        rows = self._db.execute(
+            "SELECT topic_id FROM grammar_reviews WHERE day = ? ORDER BY reviewed_at",
+            (day.isoformat(),),
+        )
+        return [row[0] for row in rows]
+
+    def last_reviewed(self, topic_id: str) -> date | None:
+        """The review day of the topic's latest grammar review; None if it has none."""
+        row = self._db.execute(
+            "SELECT MAX(day) FROM grammar_reviews WHERE topic_id = ?", (topic_id,)
+        ).fetchone()
+        return None if row[0] is None else date.fromisoformat(row[0])
 
     def _keep_found(self, episode: str, found: list[FoundTopic]) -> None:
         self._db.execute("DELETE FROM episode_topics WHERE episode = ?", (episode,))
