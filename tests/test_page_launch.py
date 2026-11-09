@@ -5,11 +5,13 @@ import socket
 import threading
 import urllib.error
 import urllib.request
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
 
+from core import VocabStore, WordState
 from web.launch import PageError, PageServer
 
 MEDIA = Path(__file__).parent / "fixtures"
@@ -149,11 +151,82 @@ def test_the_page_lists_the_lessons_newest_first_and_gives_each_lesson(
         {"number": 2, "episode": "Dark/S01E02"},
         {"number": 1, "episode": "Dark/S01E01"},
     ]
-    assert get_json(f"http://127.0.0.1:{port}/api/lessons/1") == lesson_file(
-        1, "Dark/S01E01"
-    )
+    assert get_json(f"http://127.0.0.1:{port}/api/lessons/1") == {
+        **lesson_file(1, "Dark/S01E01"),
+        "results": {},
+        "finished": False,
+    }
     with pytest.raises(urllib.error.HTTPError) as missing:
         get_json(f"http://127.0.0.1:{port}/api/lessons/9")
     assert missing.value.code == 404
     with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
         assert 'id="lesson-tab"' in response.read().decode("utf-8")
+
+
+def post_json(url: str, body: dict | None = None):
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body or {}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def lesson_with_an_article_exercise() -> dict:
+    lesson = lesson_file(1, "Dark/S01E01")
+    lesson["sections"][0]["words"] = [
+        {
+            "base_form": "Höhle",
+            "word_type": "NOUN",
+            "exercises": [
+                {
+                    "id": "Höhle:article",
+                    "kind": "article",
+                    "sentence": "___ Höhle",
+                    "answer": "die",
+                    "options": ["der", "die", "das"],
+                    "explanation": "Höhle is feminine: die Höhle.",
+                }
+            ],
+        }
+    ]
+    return lesson
+
+
+def test_the_page_checks_an_answer_and_finishes_the_lesson(tmp_path, page, port):
+    lessons = tmp_path / "lessons"
+    lessons.mkdir()
+    (lessons / "lesson-001.json").write_text(
+        json.dumps(lesson_with_an_article_exercise()), encoding="utf-8"
+    )
+    with closing(VocabStore(tmp_path / "vocab.sqlite")) as store:
+        store.add("Höhle", "NOUN", WordState.UNKNOWN)
+    page.open("Dark/S01E01")
+    base = f"http://127.0.0.1:{port}/api/lessons/1"
+
+    shown = get_json(base)["sections"][0]["words"][0]["exercises"][0]
+    assert "answer" not in shown and "explanation" not in shown
+
+    result = post_json(base + "/answers", {"exercise_id": "Höhle:article", "answer": "der"})
+    assert result == {
+        "right": False,
+        "correction": "die Höhle",
+        "reason": "Höhle is feminine: die Höhle.",
+    }
+    with pytest.raises(urllib.error.HTTPError) as rejected:
+        post_json(base + "/answers", {"exercise_id": "Höhle:plural", "answer": "die"})
+    assert rejected.value.code == 400
+
+    assert post_json(base + "/finish") == {
+        "number": 1,
+        "taught_words": ["Höhle"],
+        "topics": [],
+    }
+    with closing(VocabStore(tmp_path / "vocab.sqlite")) as store:
+        assert store.state_of("Höhle") == WordState.TAUGHT
+    assert get_json(base)["finished"] is True
+    with pytest.raises(urllib.error.HTTPError) as again:
+        post_json(base + "/finish")
+    assert again.value.code == 400

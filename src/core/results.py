@@ -78,7 +78,7 @@ def check_answer(
             "correction": result.correction,
             "reason": result.reason,
         }
-        lessons._write_results(results)
+        lessons.write_results(results)
     return result
 
 
@@ -174,7 +174,7 @@ def finish_lesson(
         # Last: if a step above fails, Finish can run again, as each step
         # only moves a word or a topic forward.
         results["finished"] = True
-        lessons._write_results(results)
+        lessons.write_results(results)
     return Finished(number, taught, topics)
 
 

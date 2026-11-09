@@ -553,6 +553,22 @@ LESSON_GRAMMAR = [
         "line": 2,
         "rule": "Some verbs take a dative object.",
         "cases": ["Ich helfe dir.", "Wir danken dem Mann."],
+        "exercises": [
+            {
+                "kind": "choice",
+                "sentence": "Wir danken ___ Frau.",
+                "answer": "der",
+                "options": ["der", "die", "den"],
+                "explanation": "danken takes the dative.",
+            },
+            {
+                "kind": "gap",
+                "sentence": "Ich folge ___ Weg.",
+                "answer": "dem",
+                "options": [],
+                "explanation": "folgen takes the dative.",
+            },
+        ],
     },
     {
         "topic_id": "konjunktiv-1",
@@ -560,6 +576,22 @@ LESSON_GRAMMAR = [
         "line": None,
         "rule": "Indirect speech uses Konjunktiv I.",
         "cases": ["Sie sagt, sie habe Zeit.", "Man sagt, es gebe Regen."],
+        "exercises": [
+            {
+                "kind": "gap",
+                "sentence": "Er sagt, er ___ müde.",
+                "answer": "sei",
+                "options": [],
+                "explanation": "Indirect speech: sein becomes sei.",
+            },
+            {
+                "kind": "choice",
+                "sentence": "Sie sagt, sie ___ keine Zeit.",
+                "answer": "habe",
+                "options": ["habe", "hat"],
+                "explanation": "Indirect speech: haben becomes habe.",
+            },
+        ],
     },
 ]
 
@@ -582,6 +614,8 @@ def test_write_lesson_tool_writes_the_lesson_file_of_an_episode(toolbox, db):
     }
     lesson = LessonFiles(db.parent / "lessons").read(1)
     assert lesson["sections"][0]["words"][0]["sentences"][0] == "Sie gibt nie auf, Satz 1."
+    dativ = lesson["sections"][0]["grammar"][0]
+    assert dativ["exercises"][1] == {"id": "dativ:2", **LESSON_GRAMMAR[0]["exercises"][1]}
 
 
 @pytest.mark.parametrize(
@@ -592,8 +626,13 @@ def test_write_lesson_tool_writes_the_lesson_file_of_an_episode(toolbox, db):
         ({"cases": "Ich helfe dir."}, "cases"),
         ({"extra": "x"}, "exactly"),
         ({"example": "Martha sucht den Jungen."}, "names from the Episode"),
+        ({"exercises": [{"kind": "gap"}]}, "exactly"),
+        ({"exercises": LESSON_GRAMMAR[0]["exercises"][:1]}, "2 to 4 exercises"),
     ],
-    ids=["no rule", "line as text", "cases not a list", "extra field", "name"],
+    ids=[
+        "no rule", "line as text", "cases not a list", "extra field", "name",
+        "exercise fields", "one exercise",
+    ],
 )
 def test_write_lesson_tool_rejects_a_lesson_that_does_not_match_the_schema(
     toolbox, db, change, problem

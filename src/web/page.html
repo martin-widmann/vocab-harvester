@@ -31,6 +31,16 @@
   .muted { color: var(--muted); }
   .item ul { margin: 8px 0 0; padding-left: 20px; }
   .rule { white-space: pre-line; }
+  .exercise { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 8px; }
+  .exercise form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .exercise input { font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+                    border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .exercise button, #finish { font: inherit; padding: 4px 12px; border: 1px solid var(--line);
+                              border-radius: 6px; background: none; color: var(--fg); cursor: pointer; }
+  .exercise button:disabled, #finish:disabled { cursor: default; opacity: .6; }
+  .right { color: var(--known); font-weight: 600; }
+  .wrong { color: #c0392b; font-weight: 600; }
+  #finish { margin-top: 24px; padding: 8px 20px; font-weight: 600; }
   #status { color: var(--muted); }
   #word { font-size: 2.6rem; font-weight: 600; margin: 32px 0 4px; overflow-wrap: anywhere; }
   #type { color: var(--muted); letter-spacing: .05em; }
@@ -196,9 +206,136 @@ async function openLesson(number) {
   const lesson = await response.json();
   if (request !== lessonRequest) return;
   $("lesson-status").textContent = "";
+  shownLesson = lesson;
   const content = $("lesson-content");
   content.append(element("h2", `Lesson ${lesson.number} · ${lesson.episode}`));
   for (const section of lesson.sections) content.append(sectionView(section));
+  content.append(finishView());
+}
+
+// The Lesson on the page: its number, the saved results by exercise id, finished.
+let shownLesson = null;
+
+function exerciseView(exercise) {
+  const view = element("div", null, "exercise");
+  view.append(element("p", exercise.sentence));
+  const form = element("form");
+  const result = element("p", null, "result");
+  result.setAttribute("aria-live", "polite");
+  const send = (answer) => checkExercise(exercise, answer, form, result);
+  if (exercise.kind === "choice") {
+    for (const option of exercise.options) {
+      const button = element("button", option);
+      button.type = "button";
+      button.addEventListener("click", () => send(option));
+      form.append(button);
+    }
+  } else {
+    const input = element("input");
+    input.setAttribute("aria-label", exercise.kind === "article" ? "der, die or das" : "Your answer");
+    input.placeholder = exercise.kind === "article" ? "der, die or das" : "Your answer";
+    input.autocomplete = "off";
+    const button = element("button", "Check");
+    form.append(input, button);
+    form.addEventListener("submit", (event) => { event.preventDefault(); send(input.value); });
+  }
+  view.append(form, result);
+  const saved = shownLesson.results[exercise.id];
+  if (saved) showResult(saved, form, result, saved.answer);
+  else if (shownLesson.finished) lockForm(form);
+  return view;
+}
+
+async function checkExercise(exercise, answer, form, result) {
+  if (!answer.trim()) return;
+  lockForm(form);
+  const lesson = shownLesson;
+  try {
+    const response = await fetch(`/api/lessons/${lesson.number}/answers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exercise_id: exercise.id, answer }),
+    });
+    if (!response.ok) {
+      result.className = "wrong";
+      result.textContent = await errorText(response);
+      unlockForm(form);
+      return;
+    }
+    const checked = await response.json();
+    lesson.results[exercise.id] = { ...checked, answer };
+    showResult(checked, form, result, answer);
+  } catch (error) {
+    result.className = "wrong";
+    result.textContent = `The answer was not saved: ${error}`;
+    unlockForm(form);
+  }
+}
+
+function showResult(checked, form, result, answer) {
+  lockForm(form);
+  const input = form.querySelector("input");
+  if (input) input.value = answer;
+  for (const button of form.querySelectorAll("button")) {
+    if (button.textContent === answer) button.setAttribute("aria-pressed", "true");
+  }
+  result.className = "";
+  result.replaceChildren(
+    element("span", checked.right ? "Right. " : "Wrong. ", checked.right ? "right" : "wrong"),
+    element("span", checked.right ? checked.reason : `${checked.correction} · ${checked.reason}`),
+  );
+}
+
+function lockForm(form) {
+  for (const control of form.querySelectorAll("input, button")) control.disabled = true;
+}
+
+function unlockForm(form) {
+  for (const control of form.querySelectorAll("input, button")) control.disabled = false;
+}
+
+function lessonExercises(lesson) {
+  return lesson.sections.flatMap((section) =>
+    [...section.words, ...section.grammar].flatMap((item) => item.exercises || []));
+}
+
+function finishView() {
+  const view = element("div");
+  const status = element("p", null, "muted");
+  status.setAttribute("aria-live", "polite");
+  const button = element("button", "Finish");
+  button.id = "finish";
+  if (shownLesson.finished) {
+    button.disabled = true;
+    status.textContent = "This Lesson is finished.";
+  }
+  button.addEventListener("click", async () => {
+    const lesson = shownLesson;
+    const open = lessonExercises(lesson).filter((exercise) => !lesson.results[exercise.id]).length;
+    if (open && !confirm(`${open} exercises have no answer. They count as wrong. Finish anyway?`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/lessons/${lesson.number}/finish`, { method: "POST" });
+      if (!response.ok) {
+        status.textContent = await errorText(response);
+        button.disabled = false;
+        return;
+      }
+      const finished = await response.json();
+      lesson.finished = true;
+      for (const form of $("lesson-content").querySelectorAll(".exercise form")) lockForm(form);
+      const lines = [`Finished. ${finished.taught_words.length} words are now Taught words.`];
+      for (const topic of finished.topics) {
+        lines.push(`${topic.topic_id}: ${topic.right} of ${topic.exercises} right, now ${topic.state}.`);
+      }
+      status.textContent = lines.join(" ");
+    } catch (error) {
+      status.textContent = `Finish did not work: ${error}`;
+      button.disabled = false;
+    }
+  });
+  view.append(button, status);
+  return view;
 }
 
 function sectionView(section) {
@@ -237,6 +374,7 @@ function wordView(word) {
   const sentences = element("ul");
   for (const sentence of word.sentences) sentences.append(element("li", sentence));
   view.append(sentences);
+  for (const exercise of word.exercises || []) view.append(exerciseView(exercise));
   return view;
 }
 
@@ -250,6 +388,7 @@ function grammarView(topic) {
   const cases = element("ul");
   for (const text of topic.cases) cases.append(element("li", text));
   view.append(cases);
+  for (const exercise of topic.exercises || []) view.append(exerciseView(exercise));
   return view;
 }
 

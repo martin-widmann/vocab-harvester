@@ -160,7 +160,8 @@ class LessonFiles:
     def _write(self, lesson: dict) -> None:
         self._write_json(self._folder / f"lesson-{lesson['number']:03}.json", lesson)
 
-    def _write_results(self, results: dict) -> None:
+    def write_results(self, results: dict) -> None:
+        """Save the results file of a Lesson; only the web server writes it."""
         self._write_json(self._results_path(results["lesson"]), results)
 
     def _results_path(self, number: int) -> Path:
@@ -225,6 +226,14 @@ def write_lesson(
     lines = read_lines(subtitle_file(episode_folder))
     topics = _checked_grammar(episode, lines, stock, curriculum, facts, grammar)
     previous = lessons.of_episode(episode)
+    if previous is not None:
+        old = lessons.results(previous["number"])
+        if old["answers"] or old["finished"]:
+            # The answers belong to the old exercises; the ids may come back.
+            raise ValueError(
+                f"Lesson {previous['number']} of {episode} already has answers; "
+                "it cannot be replaced"
+            )
     words = []
     if previous is None:
         words = pick_lesson_words(episode_folder, store, frequency)
@@ -405,16 +414,16 @@ def _check_texts(name: str, part: GrammarPart) -> None:
         "example": part.example,
         **{f"case {n}": case for n, case in enumerate(part.cases, 1)},
     }
-    for field, text in texts.items():
+    for part_name, text in texts.items():
         if not text:
-            raise ValueError(f"{name}: the {field} is empty")
+            raise ValueError(f"{name}: the {part_name} is empty")
         if len(text) > MAX_SENTENCE_LENGTH:
             raise ValueError(
-                f"{name}: the {field} is too long; use at most "
+                f"{name}: the {part_name} is too long; use at most "
                 f"{MAX_SENTENCE_LENGTH} characters"
             )
         if len(text.splitlines()) > 1:
-            raise ValueError(f"{name}: the {field} must be one line")
+            raise ValueError(f"{name}: the {part_name} must be one line")
     if not MIN_EXERCISES <= len(part.exercises) <= MAX_EXERCISES:
         raise ValueError(f"{name}: give {MIN_EXERCISES} to {MAX_EXERCISES} exercises")
     solved = set()

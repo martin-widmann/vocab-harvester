@@ -13,6 +13,7 @@ from core import (
     FoundTopic,
     FrequencyTable,
     GrammarPart,
+    LessonExercise,
     LessonFiles,
     Line,
     SentenceChecker,
@@ -102,6 +103,19 @@ _EXERCISE = {
     "additionalProperties": False,
 }
 
+_LESSON_EXERCISE = {
+    "type": "object",
+    "properties": {
+        "kind": {"type": "string", "enum": ["gap", "choice"]},
+        "sentence": {"type": "string"},
+        "answer": {"type": "string"},
+        "options": {"type": "array", "items": {"type": "string"}},
+        "explanation": {"type": "string"},
+    },
+    "required": ["kind", "sentence", "answer", "options", "explanation"],
+    "additionalProperties": False,
+}
+
 _GRAMMAR_PART = {
     "type": "object",
     "properties": {
@@ -110,8 +124,9 @@ _GRAMMAR_PART = {
         "line": {"type": ["integer", "null"]},
         "rule": {"type": "string"},
         "cases": {"type": "array", "items": {"type": "string"}},
+        "exercises": {"type": "array", "items": _LESSON_EXERCISE},
     },
-    "required": ["topic_id", "example", "line", "rule", "cases"],
+    "required": ["topic_id", "example", "line", "rule", "cases", "exercises"],
     "additionalProperties": False,
 }
 
@@ -433,9 +448,15 @@ class Toolbox:
                     "of the topic's Lines from report_topics; then cut the Line to "
                     "the part with the topic and change every name); rule, the "
                     "full rule in English; cases, 2 to 6 more German example "
-                    "sentences of the rule. No text may use a name of a person or "
+                    "sentences of the rule; exercises, 2 to 4 Lesson exercises "
+                    "of the rule, in the same shape as add_exercises but without "
+                    "topic_id (the learner sees no answer or explanation until "
+                    "they answer). The core adds a der/die/das exercise for each "
+                    "noun with a gender. No text may use a name of a person or "
                     "place from the Episode or copy a whole Line. LanguageTool "
-                    "checks the example and the cases. A Lesson that breaks a "
+                    "checks the example, the cases and each exercise with its "
+                    "answer in the gap. A Lesson that already has answers cannot "
+                    "be replaced. A Lesson that breaks a "
                     "rule is rejected and nothing is written: fix it and call "
                     "again. A new call for the same Episode replaces its Lesson. "
                     "The result gives the Lesson number and, per Section, its "
@@ -449,7 +470,13 @@ class Toolbox:
                             '"example": "Ich helfe dem Mann.", "line": null, '
                             '"rule": "helfen, danken and folgen take a dative '
                             'object.", "cases": ["Wir danken dir.", '
-                            '"Sie folgt dem Weg."]}].',
+                            '"Sie folgt dem Weg."], "exercises": [{"kind": '
+                            '"choice", "sentence": "Wir danken ___ Frau.", '
+                            '"answer": "der", "options": ["der", "die", "den"], '
+                            '"explanation": "danken takes the dative."}, '
+                            '{"kind": "gap", "sentence": "Ich folge ___ Weg.", '
+                            '"answer": "dem", "options": [], "explanation": '
+                            '"folgen takes the dative."}]}].',
                         },
                     },
                     self._write_lesson,
@@ -598,7 +625,18 @@ class Toolbox:
                 curriculum=curriculum,
                 stock=stock,
                 checker=self._checker,
-                grammar=[GrammarPart(**part) for part in grammar],
+                grammar=[
+                    GrammarPart(
+                        **{
+                            **part,
+                            "exercises": [
+                                LessonExercise(**exercise)
+                                for exercise in part["exercises"]
+                            ],
+                        }
+                    )
+                    for part in grammar
+                ],
             )
         return {
             "number": lesson["number"],

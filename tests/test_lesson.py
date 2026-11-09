@@ -25,6 +25,7 @@ from core import (
     WordFacts,
     add_sentences,
     build_frequency_table,
+    check_answer,
     import_word_facts,
     new_words,
     read_lines,
@@ -588,3 +589,14 @@ def test_each_noun_with_a_gender_gets_a_der_die_das_exercise(write):
         }
     ]
     assert suchen["exercises"] == []
+
+
+def test_a_lesson_with_answers_is_not_replaced(write, lessons):
+    write()
+    check_answer(lessons, 1, "Höhle:article", "die")
+
+    with pytest.raises(ValueError, match="already has answers"):
+        write(grammar=[PASSIV, replace(DATIV, rule="Helfen takes the dative.")])
+
+    assert lessons.read(1)["sections"][1]["grammar"][0]["rule"] != "Helfen takes the dative."
+    assert lessons.results(1)["answers"]["Höhle:article"]["right"] is True
