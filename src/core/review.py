@@ -6,6 +6,9 @@ later reviews show the example sentences in turn. The learner grades
 themselves (Again, Hard, Good, Easy); FSRS sets the next review date. For a
 noun the learner also types der, die or das, and a script checks it. At most
 50 cards a day: the rest stay due and come the next day.
+
+A word's first review is due the day after its Lesson: the Lesson comes
+before watching, and the episode Line would spoil the Episode.
 """
 
 import re
@@ -46,8 +49,8 @@ class SystemDateClock:
 class ReviewCard:
     """A due vocab card as the Review tab shows it.
 
-    `context` is the sentence the card shows, with the word in **bold** in
-    an episode Line. `first_review` tells whether it is the episode Line.
+    `context` is what the card shows: the episode Line with the word in
+    **bold** (`first_review` is True), or an example sentence.
     `needs_article` is True for a noun: the learner types der, die or das.
     """
 
@@ -112,7 +115,7 @@ def grade_card(
             base_form,
             card.to_json(),
             utc.isoformat(),
-            now.date().isoformat(),
+            now.date(),
             found.name,
             None if checked is None else checked.right,
         )
@@ -128,12 +131,14 @@ def _now(clock: Clock) -> datetime:
 
 def _due(store: VocabStore, now: datetime) -> list[ReviewData]:
     utc = now.astimezone(timezone.utc)
-    done_today = store.reviewed_on(now.date().isoformat())
+    today = now.date()
+    done_today = store.reviewed_on(today)
     due = []
     new = []
     for data in store.review_data():
         if data.card is None:
-            new.append(data)
+            if data.teaching is None or data.teaching.day < today:
+                new.append(data)
             continue
         card_due = Card.from_json(data.card).due
         if card_due <= utc:
@@ -151,13 +156,15 @@ def _due(store: VocabStore, now: datetime) -> list[ReviewData]:
 
 
 def _card(store: VocabStore, data: ReviewData) -> ReviewCard:
+    teaching = data.teaching
+    seen_form = None if teaching is None else teaching.seen_form
     line = data.line
     sentences = [sentence for _, sentence in sorted(store.example_sentences(data.base_form).items())]
     # The first review shows the episode Line; each later review the next
     # example sentence. A word with no episode Line starts with the sentences.
     first = line is not None and data.reviews == 0
     if first or (line is not None and not sentences):
-        context = _in_bold(line.text, line.seen_form)
+        context = _in_bold(line.text, seen_form or "")
     elif sentences:
         later = data.reviews - 1 if line is not None else data.reviews
         context = sentences[later % len(sentences)]
@@ -166,11 +173,11 @@ def _card(store: VocabStore, data: ReviewData) -> ReviewCard:
     return ReviewCard(
         base_form=data.base_form,
         word_type=data.word_type,
-        seen_form=None if line is None else line.seen_form,
+        seen_form=seen_form,
         context=context,
         first_review=first,
-        meaning=data.meaning,
-        needs_article=data.gender in ARTICLES,
+        meaning=None if teaching is None else teaching.meaning,
+        needs_article=_gender(data) in ARTICLES,
     )
 
 
@@ -189,17 +196,22 @@ def _in_bold(text: str, seen_form: str) -> str:
     return text
 
 
+def _gender(data: ReviewData) -> str | None:
+    return None if data.teaching is None else data.teaching.gender
+
+
 def _checked_article(data: ReviewData, article: str | None) -> Result | None:
-    if data.gender not in ARTICLES:
+    gender = _gender(data)
+    if gender not in ARTICLES:
         if article:
             raise ValueError(f"{data.base_form!r} is not a noun; it takes no article")
         return None
     given = " ".join((article or "").split()).casefold()
     if given not in ARTICLES.values():
         raise ValueError("Type der, die or das")
-    expected = ARTICLES[data.gender]
+    expected = ARTICLES[gender]
     return Result(
         given == expected,
         f"{expected} {data.base_form}",
-        f"{data.base_form} is {data.gender}: {expected} {data.base_form}.",
+        f"{data.base_form} is {gender}: {expected} {data.base_form}.",
     )

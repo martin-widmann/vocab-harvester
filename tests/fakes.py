@@ -1,5 +1,7 @@
 """Fakes for the adapters at the edges: LanguageTool, the clock and the grader runner."""
 
+from datetime import timedelta
+
 from core import Issue
 
 
@@ -59,6 +61,4 @@ class FakeDateClock:
         return self.time
 
     def advance(self, **delta):
-        from datetime import timedelta
-
         self.time += timedelta(**delta)

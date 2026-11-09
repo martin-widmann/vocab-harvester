@@ -130,6 +130,7 @@ def create_app(
                     number,
                     store=store,
                     curriculum=curriculum,
+                    today=clock.now().date(),
                 )
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))

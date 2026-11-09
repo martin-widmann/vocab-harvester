@@ -3,7 +3,7 @@
 import sqlite3
 from contextlib import closing
 from dataclasses import asdict, replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -694,11 +694,12 @@ def test_a_finished_lesson_gives_review_cards_with_the_episode_line_and_facts(
     write, lessons, store, curriculum
 ):
     write()
-    finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=date(2026, 11, 9))
 
+    # The day after the Lesson: the Episode is watched.
     cards = {
         card.base_form: card
-        for card in due_cards(store, FakeDateClock(datetime(2026, 11, 9, tzinfo=timezone.utc)))
+        for card in due_cards(store, FakeDateClock(datetime(2026, 11, 10, tzinfo=timezone.utc)))
     }
 
     assert set(cards) == UNKNOWN

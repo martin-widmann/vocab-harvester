@@ -42,7 +42,6 @@ from core.lesson import (
 from core.lesson_words import LessonWord, pick_lesson_words
 from core.results import Finished, Result, TopicResult, check_answer, finish_lesson, lesson_for_page
 from core.review import (
-    DAILY_CARD_LIMIT,
     Graded,
     ReviewCard,
     SystemDateClock,
@@ -60,18 +59,18 @@ from core.sentences import (
     failed_sentences,
 )
 from core.subtitles import Line, SubtitleError, extract_subtitles, read_lines
-from core.vocab_store import EpisodeLine, VocabStore, WordState
+from core.vocab_store import EpisodeLine, Teaching, VocabStore, WordState
 from core.word_analysis import Word, analyse
 from core.word_check import CHECK_KEYS, record_answer
 from core.word_facts import Facts, WordFacts, import_word_facts
 
 __all__ = [
     "CHECK_KEYS",
-    "DAILY_CARD_LIMIT",
     "EpisodeLine",
     "Graded",
     "ReviewCard",
     "SystemDateClock",
+    "Teaching",
     "due_cards",
     "grade_card",
     "OPEN_KINDS",

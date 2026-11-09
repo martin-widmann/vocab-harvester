@@ -6,12 +6,13 @@ import threading
 import urllib.error
 import urllib.request
 from contextlib import closing
+from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
 
-from core import EpisodeLine, VocabStore, WordState
+from core import EpisodeLine, Teaching, VocabStore, WordState
 from web.launch import PageError, PageServer
 
 MEDIA = Path(__file__).parent / "fixtures"
@@ -235,13 +236,12 @@ def test_the_page_checks_an_answer_and_finishes_the_lesson(tmp_path, page, port)
 def test_the_review_tab_gets_the_due_cards_and_grades_one(tmp_path, page, port):
     with closing(VocabStore(tmp_path / "vocab.sqlite")) as store:
         store.add("Höhle", "NOUN", WordState.UNKNOWN)
-        store.keep_lesson_word(
-            "Höhle",
-            EpisodeLine("Dark/S01E01", 1, "Sie sind in der Höhle.", "Höhle"),
-            "cave",
-            "feminine",
+        store.keep_episode_line(
+            "Höhle", EpisodeLine("Dark/S01E01", 1, "Sie sind in der Höhle.")
         )
-        store.teach("Höhle", "Dark/S01E01")
+        # Taught yesterday: the web server uses the computer's clock.
+        yesterday = date.today() - timedelta(days=1)
+        store.teach("Höhle", Teaching("Dark/S01E01", yesterday, "Höhle", "cave", "feminine"))
     page.open("Dark/S01E01")
     base = f"http://127.0.0.1:{port}/api/reviews"
 

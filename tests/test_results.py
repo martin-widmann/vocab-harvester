@@ -1,8 +1,10 @@
 """Check the fixed answers of a Lesson and Finish it."""
 
 import json
+from datetime import date, datetime, timezone
 
 import pytest
+from fakes import FakeDateClock
 
 from core import (
     Curriculum,
@@ -14,6 +16,7 @@ from core import (
     VocabStore,
     WordState,
     check_answer,
+    due_cards,
     finish_lesson,
     lesson_for_page,
 )
@@ -79,6 +82,8 @@ LESSON = {
     ],
 }
 
+TODAY = date(2026, 11, 9)
+
 TOPICS = [
     Topic("dativ", "Dativ", "A2"),
     Topic("passiv-modalverb", "Passiv mit Modalverb", "B2"),
@@ -118,6 +123,29 @@ def curriculum(db):
     curriculum.review("dativ", passed=False)  # Dativ is a Weak point: Learned.
     yield curriculum
     curriculum.close()
+
+
+def test_finish_teaches_each_word_with_the_facts_of_its_lesson(
+    tmp_path, lessons, store, curriculum
+):
+    path = tmp_path / "lessons" / "lesson-001.json"
+    lesson = json.loads(path.read_text(encoding="utf-8"))
+    lesson["sections"][0]["words"][1].update(
+        seen_form="Höhle", meaning="cave", gender="feminine"
+    )
+    path.write_text(json.dumps(lesson), encoding="utf-8")
+
+    finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
+
+    cards = {
+        card.base_form: card
+        for card in due_cards(store, FakeDateClock(datetime(2026, 11, 10, tzinfo=timezone.utc)))
+    }
+    assert set(cards) == {"suchen", "Höhle", "helfen", "aufgeben"}
+    assert (cards["Höhle"].seen_form, cards["Höhle"].meaning) == ("Höhle", "cave")
+    assert cards["Höhle"].needs_article is True
+    # Taught today: no card before the next day.
+    assert due_cards(store, FakeDateClock(datetime(2026, 11, 9, 23, tzinfo=timezone.utc))) == []
 
 
 def test_a_right_gap_answer_gives_right_the_correction_and_a_short_reason(lessons):
@@ -237,7 +265,7 @@ def states(curriculum):
 
 
 def test_finish_makes_the_lesson_words_taught_words_at_once(lessons, store, curriculum):
-    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     assert finished.taught_words == ["suchen", "Höhle", "helfen", "aufgeben"]
     for base_form in finished.taught_words:
@@ -248,7 +276,7 @@ def test_finish_makes_the_lesson_words_taught_words_at_once(lessons, store, curr
 def test_finish_leaves_a_lesson_word_that_is_no_longer_unknown(lessons, store, curriculum):
     store.set_state("helfen", WordState.KNOWN)
 
-    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     assert "helfen" not in finished.taught_words
     assert store.state_of("helfen") == WordState.KNOWN
@@ -257,7 +285,7 @@ def test_finish_leaves_a_lesson_word_that_is_no_longer_unknown(lessons, store, c
 def test_a_new_topic_whose_exercises_passed_becomes_learned(lessons, store, curriculum):
     answer_all(lessons, {"passiv-modalverb:1", "passiv-modalverb:2"})
 
-    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     assert states(curriculum)["passiv-modalverb"] == TopicState.LEARNED
     assert TopicResult("passiv-modalverb", 2, 3, True, TopicState.LEARNED) in finished.topics
@@ -266,7 +294,7 @@ def test_a_new_topic_whose_exercises_passed_becomes_learned(lessons, store, curr
 def test_a_new_topic_whose_exercises_failed_becomes_seen(lessons, store, curriculum):
     answer_all(lessons, {"passiv-modalverb:1"})
 
-    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     assert states(curriculum)["passiv-modalverb"] == TopicState.SEEN
     assert TopicResult("passiv-modalverb", 1, 3, False, TopicState.SEEN) in finished.topics
@@ -275,7 +303,7 @@ def test_a_new_topic_whose_exercises_failed_becomes_seen(lessons, store, curricu
 def test_an_exercise_with_no_answer_counts_as_wrong(lessons, store, curriculum):
     check_answer(lessons, 1, "passiv-modalverb:1", "geschrieben")
 
-    finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     assert states(curriculum)["passiv-modalverb"] == TopicState.SEEN
 
@@ -285,7 +313,7 @@ def test_a_weak_point_the_lesson_taught_again_stays_learned_and_weak(
 ):
     answer_all(lessons, {"dativ:1", "dativ:2"})
 
-    finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     (dativ,) = [status for status in curriculum.topics() if status.topic.id == "dativ"]
     assert (dativ.state, dativ.weak) == (TopicState.LEARNED, True)
@@ -297,20 +325,20 @@ def test_finish_is_saved_in_the_results_file_and_ends_the_answers(
 ):
     check_answer(lessons, 1, "dativ:1", "den")
 
-    finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     assert lessons.results(1)["finished"] is True
     assert not check_answer(lessons, 1, "dativ:1", "dem").right
     with pytest.raises(ValueError, match="finished"):
         check_answer(lessons, 1, "dativ:2", "der")
     with pytest.raises(ValueError, match="already finished"):
-        finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+        finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
 
 def test_a_topic_that_left_the_curriculum_is_left_out(lessons, store, curriculum):
     curriculum.approve(curriculum.propose([TOPICS[0], TOPICS[2]]).number)
 
-    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+    finished = finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=TODAY)
 
     assert [result.topic_id for result in finished.topics] == ["dativ"]
     assert lessons.results(1)["finished"] is True

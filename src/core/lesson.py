@@ -278,15 +278,11 @@ def write_lesson(
         for number in range(1, SECTION_COUNT + 1)
     ]
     for word in sorted(words, key=lambda word: word.line.number):
-        entry = _word(word, store, facts)
-        sections[word.section - 1]["words"].append(entry)
+        sections[word.section - 1]["words"].append(_word(word, store, facts))
         # The episode Line stays out of the Lesson file (no spoilers before
         # watching); the vocab store keeps it for the first review.
-        store.keep_lesson_word(
-            word.base_form,
-            EpisodeLine(episode, word.line.number, _clean(word.line.text), word.seen_form),
-            entry["meaning"],
-            entry["gender"],
+        store.keep_episode_line(
+            word.base_form, EpisodeLine(episode, word.line.number, _clean(word.line.text))
         )
     if previous is not None:
         for section, old in zip(sections, previous["sections"]):

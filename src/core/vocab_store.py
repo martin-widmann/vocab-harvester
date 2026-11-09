@@ -3,6 +3,7 @@
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum
 from pathlib import Path
 
@@ -29,28 +30,41 @@ class FailedSentence:
 
 @dataclass(frozen=True)
 class EpisodeLine:
-    """The Line of an Episode where a Lesson word is first heard, and its Seen form."""
+    """The Line of an Episode where a Lesson word is first heard."""
 
     episode: str
     number: int
     text: str
-    seen_form: str
+
+
+@dataclass(frozen=True)
+class Teaching:
+    """What the Lesson that taught a word says about it, for its reviews.
+
+    `day` is the review day the Lesson was finished on.
+    """
+
+    episode: str
+    day: date
+    seen_form: str | None
+    meaning: str | None
+    gender: str | None
 
 
 @dataclass(frozen=True)
 class ReviewData:
     """What the vocab store holds for the review of one Taught word.
 
-    `line` is None for a word with no stored Lesson facts. `card` is the
-    FSRS card as JSON, None before the first review. `reviews` counts the
-    reviews done.
+    `teaching` is None for a word taught before reviews were kept, `line`
+    None when the store has no episode Line of the word. `card` is the FSRS
+    card as JSON, None before the first review. `reviews` counts the reviews
+    done.
     """
 
     base_form: str
     word_type: str
+    teaching: Teaching | None
     line: EpisodeLine | None
-    meaning: str | None
-    gender: str | None
     card: str | None
     reviews: int
 
@@ -77,19 +91,20 @@ CREATE TABLE IF NOT EXISTS failed_sentences (
     failures INTEGER NOT NULL,
     PRIMARY KEY (base_form, number)
 );
-CREATE TABLE IF NOT EXISTS lesson_words (
+CREATE TABLE IF NOT EXISTS episode_lines (
     base_form TEXT NOT NULL REFERENCES words (base_form),
     episode TEXT NOT NULL,
     line_number INTEGER NOT NULL,
     line_text TEXT NOT NULL,
-    seen_form TEXT NOT NULL,
-    meaning TEXT,
-    gender TEXT,
     PRIMARY KEY (base_form, episode)
 );
 CREATE TABLE IF NOT EXISTS review_cards (
     base_form TEXT PRIMARY KEY REFERENCES words (base_form),
     episode TEXT,
+    taught_on TEXT,
+    seen_form TEXT,
+    meaning TEXT,
+    gender TEXT,
     card TEXT,
     reviews INTEGER NOT NULL DEFAULT 0
 );
@@ -125,10 +140,13 @@ class VocabStore:
     def set_state(self, base_form: str, state: WordState) -> None:
         """Give a stored Base form a new word state."""
         with self._db:
-            changed = self._db.execute(
-                "UPDATE words SET state = ? WHERE base_form = ?",
-                (state.value, base_form),
-            ).rowcount
+            self._set_state(base_form, state)
+
+    def _set_state(self, base_form: str, state: WordState) -> None:
+        changed = self._db.execute(
+            "UPDATE words SET state = ? WHERE base_form = ?",
+            (state.value, base_form),
+        ).rowcount
         if not changed:
             raise ValueError(f"{base_form!r} is not in the vocab store")
 
@@ -197,52 +215,47 @@ class VocabStore:
             for base_form, number, sentence, problems, failures in rows
         ]
 
-    def keep_lesson_word(
-        self, base_form: str, line: EpisodeLine, meaning: str | None, gender: str | None
-    ) -> None:
-        """Keep what a Lesson knows about its word, for the word's later reviews."""
+    def keep_episode_line(self, base_form: str, line: EpisodeLine) -> None:
+        """Keep the episode Line of a Lesson word, for its first review."""
         with self._db:
             self._db.execute(
-                "INSERT OR REPLACE INTO lesson_words (base_form, episode, line_number, "
-                "line_text, seen_form, meaning, gender) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    base_form, line.episode, line.number, line.text, line.seen_form,
-                    meaning, gender,
-                ),
+                "INSERT OR REPLACE INTO episode_lines "
+                "(base_form, episode, line_number, line_text) VALUES (?, ?, ?, ?)",
+                (base_form, line.episode, line.number, line.text),
             )
 
-    def teach(self, base_form: str, episode: str) -> None:
-        """Make a stored Base form a Taught word, taught by the Lesson of an Episode."""
+    def teach(self, base_form: str, teaching: Teaching) -> None:
+        """Make a stored Base form a Taught word, as the Lesson in `teaching` taught it.
+
+        A word that was taught before keeps its first teaching and its card.
+        """
         with self._db:
-            changed = self._db.execute(
-                "UPDATE words SET state = ? WHERE base_form = ?",
-                (WordState.TAUGHT.value, base_form),
-            ).rowcount
-            if not changed:
-                raise ValueError(f"{base_form!r} is not in the vocab store")
+            self._set_state(base_form, WordState.TAUGHT)
             self._db.execute(
-                "INSERT INTO review_cards (base_form, episode) VALUES (?, ?) "
-                "ON CONFLICT (base_form) DO NOTHING",
-                (base_form, episode),
+                "INSERT INTO review_cards "
+                "(base_form, episode, taught_on, seen_form, meaning, gender) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (base_form) DO NOTHING",
+                (
+                    base_form, teaching.episode, teaching.day.isoformat(),
+                    teaching.seen_form, teaching.meaning, teaching.gender,
+                ),
             )
 
     def review_data(self) -> list[ReviewData]:
         """The review data of every Taught word, in the order they were taught.
 
-        A Taught word with no review row yet (taught before reviews) comes
-        last, with the facts of its newest Lesson word, if any.
+        A Taught word with no teaching (taught before reviews were kept)
+        comes last.
         """
         rows = self._db.execute(
             """
-            SELECT w.base_form, w.word_type, l.episode, l.line_number, l.line_text,
-                   l.seen_form, l.meaning, l.gender, r.card, COALESCE(r.reviews, 0)
+            SELECT w.base_form, w.word_type, r.episode, r.taught_on, r.seen_form,
+                   r.meaning, r.gender, l.line_number, l.line_text, r.card,
+                   COALESCE(r.reviews, 0)
             FROM words w
             LEFT JOIN review_cards r ON r.base_form = w.base_form
-            LEFT JOIN lesson_words l ON l.rowid = COALESCE(
-                (SELECT rowid FROM lesson_words
-                 WHERE base_form = w.base_form AND episode = r.episode),
-                (SELECT MAX(rowid) FROM lesson_words WHERE base_form = w.base_form)
-            )
+            LEFT JOIN episode_lines l
+                ON l.base_form = w.base_form AND l.episode = r.episode
             WHERE w.state = ?
             ORDER BY r.rowid IS NULL, r.rowid, w.rowid
             """,
@@ -250,13 +263,18 @@ class VocabStore:
         )
         found = []
         for (
-            base_form, word_type, episode, number, text, seen_form, meaning, gender,
-            card, reviews,
+            base_form, word_type, episode, taught_on, seen_form, meaning, gender,
+            number, text, card, reviews,
         ) in rows:
-            line = None if episode is None else EpisodeLine(episode, number, text, seen_form)
-            found.append(
-                ReviewData(base_form, word_type, line, meaning, gender, card, reviews)
-            )
+            teaching = None
+            line = None
+            if episode is not None:
+                teaching = Teaching(
+                    episode, date.fromisoformat(taught_on), seen_form, meaning, gender
+                )
+            if text is not None:
+                line = EpisodeLine(episode, number, text)
+            found.append(ReviewData(base_form, word_type, teaching, line, card, reviews))
         return found
 
     def save_review(
@@ -264,27 +282,32 @@ class VocabStore:
         base_form: str,
         card: str,
         reviewed_at: str,
-        day: str,
+        day: date,
         rating: str,
         article_right: bool | None,
     ) -> None:
-        """Save a review: the new FSRS card of a Taught word, and a log entry."""
+        """Save a review of a Taught word: its new FSRS card, and a log entry."""
         with self._db:
-            self._db.execute(
-                "INSERT INTO review_cards (base_form, card, reviews) VALUES (?, ?, 1) "
-                "ON CONFLICT (base_form) DO UPDATE SET card = excluded.card, "
-                "reviews = reviews + 1",
-                (base_form, card),
-            )
+            changed = self._db.execute(
+                "UPDATE review_cards SET card = ?, reviews = reviews + 1 "
+                "WHERE base_form = ?",
+                (card, base_form),
+            ).rowcount
+            if not changed:
+                # A word taught before reviews were kept.
+                self._db.execute(
+                    "INSERT INTO review_cards (base_form, card, reviews) VALUES (?, ?, 1)",
+                    (base_form, card),
+                )
             self._db.execute(
                 "INSERT INTO review_log (base_form, reviewed_at, day, rating, article_right) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (base_form, reviewed_at, day, rating, article_right),
+                (base_form, reviewed_at, day.isoformat(), rating, article_right),
             )
 
-    def reviewed_on(self, day: str) -> set[str]:
-        """The Base forms reviewed on a day ("2026-11-09")."""
+    def reviewed_on(self, day: date) -> set[str]:
+        """The Base forms reviewed on a review day."""
         rows = self._db.execute(
-            "SELECT DISTINCT base_form FROM review_log WHERE day = ?", (day,)
+            "SELECT DISTINCT base_form FROM review_log WHERE day = ?", (day.isoformat(),)
         )
         return {base_form for (base_form,) in rows}

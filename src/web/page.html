@@ -528,12 +528,20 @@ async function gradeReview(rating) {
       }),
     });
     if (!response.ok) {
-      $("review-error").textContent = await errorText(response);
-      if (card.needs_article) {
+      const message = await errorText(response);
+      $("review-error").textContent = message;
+      if (response.status === 400 && card.needs_article && message.includes("der, die or das")) {
         // A bad article: type it again.
         $("review-article-input").disabled = false;
         $("review-back").hidden = true;
         $("review-show").hidden = false;
+      } else {
+        // For example the card is no longer due (graded in another tab, or
+        // a new day began): go on to the next card.
+        $("review-back").hidden = true;
+        $("review-article-result").replaceChildren();
+        $("review-result").hidden = false;
+        $("review-next").focus();
       }
       return;
     }

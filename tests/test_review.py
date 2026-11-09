@@ -1,14 +1,15 @@
 """Vocab review: due cards for Taught words on an FSRS schedule."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from core import EpisodeLine, VocabStore, WordState, due_cards, grade_card
+from core import EpisodeLine, Teaching, VocabStore, WordState, due_cards, grade_card
 from fakes import FakeDateClock
 
 EPISODE = "Test/S01E01"
 START = datetime(2026, 11, 9, 8, 0, tzinfo=timezone.utc)
+YESTERDAY = date(2026, 11, 8)
 
 
 @pytest.fixture
@@ -24,19 +25,17 @@ def clock():
 
 
 def taught(store, base_form, word_type="VERB", *, line=None, seen_form=None,
-           meaning="a meaning", gender=None, sentences=()):
+           meaning="a meaning", gender=None, sentences=(), day=YESTERDAY):
     """A word as a finished Lesson leaves it: Taught, with its Lesson facts."""
     store.add(base_form, word_type, WordState.UNKNOWN)
     if line is not None:
-        store.keep_lesson_word(
-            base_form, EpisodeLine(EPISODE, 3, line, seen_form), meaning, gender
-        )
+        store.keep_episode_line(base_form, EpisodeLine(EPISODE, 3, line))
     for number, sentence in enumerate(sentences, start=1):
         store.add_example_sentence(base_form, number, sentence)
-    store.teach(base_form, EPISODE)
+    store.teach(base_form, Teaching(EPISODE, day, seen_form, meaning, gender))
 
 
-def test_a_taught_word_is_due_at_once_with_its_episode_line_and_the_word_in_bold(store, clock):
+def test_a_taught_word_is_due_with_its_episode_line_and_the_word_in_bold(store, clock):
     taught(store, "aufgeben", line="Er gab nicht auf.", seen_form="gab auf",
            meaning="to give up", sentences=["Sie gibt nie auf."])
 
@@ -47,6 +46,31 @@ def test_a_taught_word_is_due_at_once_with_its_episode_line_and_the_word_in_bold
     assert card.context == "Er **gab** nicht **auf**."
     assert card.meaning == "to give up"
     assert card.needs_article is False
+
+
+def test_a_word_taught_today_is_due_the_next_day_after_the_episode_is_watched(
+    store, clock
+):
+    taught(store, "aufgeben", line="Er gab nicht auf.", seen_form="gab auf",
+           day=START.date())
+
+    assert due_cards(store, clock) == []
+    with pytest.raises(ValueError, match="no vocab card due today"):
+        grade_card(store, "aufgeben", "Good", clock)
+    clock.time = datetime(2026, 11, 10, 0, 0, tzinfo=timezone.utc)
+    assert [card.base_form for card in due_cards(store, clock)] == ["aufgeben"]
+
+
+def test_a_word_taught_before_reviews_were_kept_is_due_with_its_sentences(store, clock):
+    store.add("aufgeben", "VERB", WordState.TAUGHT)
+    store.add_example_sentence("aufgeben", 1, "Sie gibt nie auf.")
+
+    (card,) = due_cards(store, clock)
+    assert (card.context, card.seen_form, card.needs_article) == (
+        "Sie gibt nie auf.", None, False,
+    )
+    grade_card(store, "aufgeben", "Easy", clock)
+    assert due_cards(store, clock) == []
 
 
 def test_only_taught_words_get_vocab_reviews(store, clock):
