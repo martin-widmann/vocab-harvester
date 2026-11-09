@@ -71,6 +71,16 @@ class VocabStore:
                 (base_form, word_type, state.value),
             )
 
+    def set_state(self, base_form: str, state: WordState) -> None:
+        """Give a stored Base form a new word state."""
+        with self._db:
+            changed = self._db.execute(
+                "UPDATE words SET state = ? WHERE base_form = ?",
+                (state.value, base_form),
+            ).rowcount
+        if not changed:
+            raise ValueError(f"{base_form!r} is not in the vocab store")
+
     def contains(self, base_form: str) -> bool:
         return self.state_of(base_form) is not None
 
