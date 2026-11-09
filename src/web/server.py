@@ -8,7 +8,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from core import NewWord, VocabStore, find_episode, new_words, record_answer
+from core import (
+    LessonFiles,
+    NewWord,
+    VocabStore,
+    find_episode,
+    new_words,
+    record_answer,
+)
 
 PAGE = Path(__file__).parent / "page.html"
 APP_TITLE = "German Media Learning"
@@ -45,5 +52,16 @@ def create_app(media_root: Path, db_path: Path) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
         return {"state": state.value}
+
+    @app.get("/api/lessons")
+    def lessons() -> list[dict]:
+        return [asdict(info) for info in LessonFiles.next_to(db_path).lessons()]
+
+    @app.get("/api/lessons/{number}")
+    def lesson(number: int) -> dict:
+        try:
+            return LessonFiles.next_to(db_path).read(number)
+        except ValueError as error:
+            raise HTTPException(status_code=404, detail=str(error))
 
     return app

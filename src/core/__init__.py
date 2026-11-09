@@ -29,6 +29,7 @@ from core.grammar_topics import (
     add_exercises,
     report_topics,
 )
+from core.lesson import GrammarPart, LessonFiles, LessonInfo, write_lesson
 from core.lesson_words import LessonWord, pick_lesson_words
 from core.sentences import (
     Issue,
@@ -57,9 +58,12 @@ __all__ = [
     "Facts",
     "FoundTopic",
     "FrequencyTable",
+    "GrammarPart",
     "Issue",
     "LanguageToolBusy",
+    "LessonFiles",
     "LessonGrammar",
+    "LessonInfo",
     "LessonTopics",
     "LessonWord",
     "Line",
@@ -96,4 +100,5 @@ __all__ = [
     "record_answer",
     "report_topics",
     "subtitle_file",
+    "write_lesson",
 ]

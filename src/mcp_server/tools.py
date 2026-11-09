@@ -12,6 +12,8 @@ from core import (
     ExerciseStock,
     FoundTopic,
     FrequencyTable,
+    GrammarPart,
+    LessonFiles,
     Line,
     SentenceChecker,
     SentenceToStore,
@@ -31,6 +33,7 @@ from core import (
     read_lines,
     report_topics,
     subtitle_file,
+    write_lesson,
 )
 from core.frequency import DEFAULT_FREQUENCY
 from core.language_tool import LanguageTool, SystemClock
@@ -99,7 +102,22 @@ _EXERCISE = {
     "additionalProperties": False,
 }
 
-_JSON_TYPES = {"string": str, "integer": int, "array": list, "object": dict}
+_GRAMMAR_PART = {
+    "type": "object",
+    "properties": {
+        "topic_id": {"type": "string"},
+        "example": {"type": "string"},
+        "line": {"type": ["integer", "null"]},
+        "rule": {"type": "string"},
+        "cases": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["topic_id", "example", "line", "rule", "cases"],
+    "additionalProperties": False,
+}
+
+_JSON_TYPES = {
+    "string": str, "integer": int, "array": list, "object": dict, "null": type(None)
+}
 
 
 class Page(Protocol):
@@ -141,8 +159,11 @@ class Tool:
 
 def _check_value(name: str, value, schema: dict) -> None:
     """Check a value against the small part of JSON Schema the tools use."""
-    if not isinstance(value, _JSON_TYPES[schema["type"]]) or isinstance(value, bool):
-        raise ToolError(f"{name} must be of type {schema['type']}")
+    types = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
+    if isinstance(value, bool) or not any(
+        isinstance(value, _JSON_TYPES[json_type]) for json_type in types
+    ):
+        raise ToolError(f"{name} must be of type {' or '.join(types)}")
     if schema["type"] == "array":
         for item in value:
             _check_value(f"each item of {name}", item, schema["items"])
@@ -399,6 +420,41 @@ class Toolbox:
                     self._add_exercises,
                 ),
                 Tool(
+                    "write_lesson",
+                    "Write the Lesson file of an Episode, after pick_lesson_words, "
+                    "add_sentences and report_topics. Send only the grammar part: "
+                    "one item for each of the 2 Grammar topics report_topics "
+                    "picked (new and weak). The core adds the picked words, each "
+                    "in the Section where it is first heard, with its word facts "
+                    "and stored example sentences, and puts each Grammar topic in "
+                    "the Section of its Line. Per topic: example, the first "
+                    "sentence the learner sees; line, null for a neutral example, "
+                    "or the number of the episode Line the example comes from (one "
+                    "of the topic's Lines from report_topics; then cut the Line to "
+                    "the part with the topic and change every name); rule, the "
+                    "full rule in English; cases, 2 to 6 more German example "
+                    "sentences of the rule. No text may use a name of a person or "
+                    "place from the Episode or copy a whole Line. LanguageTool "
+                    "checks the example and the cases. A Lesson that breaks a "
+                    "rule is rejected and nothing is written: fix it and call "
+                    "again. A new call for the same Episode replaces its Lesson. "
+                    "The result gives the Lesson number and, per Section, its "
+                    "words and topics.",
+                    {
+                        "episode": _EPISODE,
+                        "grammar": {
+                            "type": "array",
+                            "items": _GRAMMAR_PART,
+                            "description": 'For example [{"topic_id": "dativ", '
+                            '"example": "Ich helfe dem Mann.", "line": null, '
+                            '"rule": "helfen, danken and folgen take a dative '
+                            'object.", "cases": ["Wir danken dir.", '
+                            '"Sie folgt dem Weg."]}].',
+                        },
+                    },
+                    self._write_lesson,
+                ),
+                Tool(
                     "open_page",
                     "Start the web server if it is not running and open the "
                     "exercise page of an Episode in the browser, on its Check tab.",
@@ -522,6 +578,40 @@ class Toolbox:
                 [Exercise(**exercise) for exercise in exercises],
             )
         return [asdict(result) for result in results]
+
+    def _write_lesson(self, episode: str, grammar: list[dict]) -> dict:
+        key = episode_key(self._media_root, episode)
+        with (
+            closing(VocabStore(self._db_path)) as store,
+            closing(FrequencyTable(self._frequency_path)) as frequency,
+            closing(WordFacts(self._facts_path)) as facts,
+            closing(Curriculum(self._db_path)) as curriculum,
+            closing(ExerciseStock(self._db_path)) as stock,
+        ):
+            lesson = write_lesson(
+                LessonFiles.next_to(self._db_path),
+                key,
+                self._episode(episode),
+                store=store,
+                frequency=frequency,
+                facts=facts,
+                curriculum=curriculum,
+                stock=stock,
+                checker=self._checker,
+                grammar=[GrammarPart(**part) for part in grammar],
+            )
+        return {
+            "number": lesson["number"],
+            "episode": lesson["episode"],
+            "sections": [
+                {
+                    "number": section["number"],
+                    "words": [word["base_form"] for word in section["words"]],
+                    "grammar": [topic["topic_id"] for topic in section["grammar"]],
+                }
+                for section in lesson["sections"]
+            ],
+        }
 
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}

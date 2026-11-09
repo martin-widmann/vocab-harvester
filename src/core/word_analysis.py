@@ -50,6 +50,17 @@ def analyse_all(texts: Iterable[str]) -> Iterator[list[Word]]:
         yield [_word(token) for token in doc if _is_vocab(token)]
 
 
+def names(texts: Iterable[str]) -> set[str]:
+    """The names of people and places in the texts, as they are written."""
+    cleaned = (_MARKUP.sub("", text).replace("\n", " ") for text in texts)
+    return {
+        token.text
+        for doc in _nlp().pipe(cleaned, batch_size=1000)
+        for token in doc
+        if _is_name_or_place(token) and not _FILLER.fullmatch(token.text)
+    }
+
+
 def _is_vocab(token: Token) -> bool:
     return not (
         token.pos_ in _SKIPPED_TYPES

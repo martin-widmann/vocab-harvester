@@ -8,6 +8,7 @@ from core import (
     Curriculum,
     ExerciseStock,
     FoundTopic,
+    LessonFiles,
     VocabStore,
     WordState,
     build_frequency_table,
@@ -515,3 +516,97 @@ def test_add_exercises_tool_stores_the_exercises_languagetool_passes(toolbox, db
     with closing(ExerciseStock(db)) as stock:
         (stored,) = stock.unused("konjunktiv-1")
     assert stored.exercise.options == ["sei", "ist", "wäre"]
+
+
+def ready_for_the_lesson(toolbox, db):
+    """The lesson build up to the Lesson file: words, sentences and topics."""
+    with closing(VocabStore(db)) as store:
+        store.add("aufgeben", "VERB", WordState.UNKNOWN)
+    toolbox.call(
+        "add_sentences",
+        {
+            "sentences": [
+                {"base_form": "aufgeben", "number": n, "sentence": f"Sie gibt nie auf, Satz {n}."}
+                for n in (1, 2, 3)
+            ]
+        },
+    )
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
+    with closing(Curriculum(db)) as curriculum:
+        curriculum.review("dativ", passed=False)
+    toolbox.call(
+        "report_topics",
+        {
+            "episode": "Dark/S01E01",
+            "topics": [
+                {"topic_id": "dativ", "lines": [2]},
+                {"topic_id": "konjunktiv-1", "lines": [3]},
+            ],
+        },
+    )
+
+
+LESSON_GRAMMAR = [
+    {
+        "topic_id": "dativ",
+        "example": "Sie sucht den Jungen.",
+        "line": 2,
+        "rule": "Some verbs take a dative object.",
+        "cases": ["Ich helfe dir.", "Wir danken dem Mann."],
+    },
+    {
+        "topic_id": "konjunktiv-1",
+        "example": "Er sagt, er sei krank.",
+        "line": None,
+        "rule": "Indirect speech uses Konjunktiv I.",
+        "cases": ["Sie sagt, sie habe Zeit.", "Man sagt, es gebe Regen."],
+    },
+]
+
+
+def test_write_lesson_tool_writes_the_lesson_file_of_an_episode(toolbox, db):
+    ready_for_the_lesson(toolbox, db)
+
+    written = toolbox.call(
+        "write_lesson", {"episode": "Dark/S01E01", "grammar": LESSON_GRAMMAR}
+    )
+
+    assert written == {
+        "number": 1,
+        "episode": "Dark/S01E01",
+        "sections": [
+            {"number": 1, "words": ["aufgeben"], "grammar": ["dativ", "konjunktiv-1"]},
+            {"number": 2, "words": [], "grammar": []},
+            {"number": 3, "words": [], "grammar": []},
+        ],
+    }
+    lesson = LessonFiles(db.parent / "lessons").read(1)
+    assert lesson["sections"][0]["words"][0]["sentences"][0] == "Sie gibt nie auf, Satz 1."
+
+
+@pytest.mark.parametrize(
+    "change, problem",
+    [
+        ({"rule": None}, "rule"),
+        ({"line": "2"}, "line"),
+        ({"cases": "Ich helfe dir."}, "cases"),
+        ({"extra": "x"}, "exactly"),
+        ({"example": "Martha sucht den Jungen."}, "names from the Episode"),
+    ],
+    ids=["no rule", "line as text", "cases not a list", "extra field", "name"],
+)
+def test_write_lesson_tool_rejects_a_lesson_that_does_not_match_the_schema(
+    toolbox, db, change, problem
+):
+    ready_for_the_lesson(toolbox, db)
+    dativ = {**LESSON_GRAMMAR[0], **change}
+    if change.get("rule", "") is None:
+        del dativ["rule"]
+
+    with pytest.raises(ToolError, match=problem):
+        toolbox.call(
+            "write_lesson",
+            {"episode": "Dark/S01E01", "grammar": [dativ, LESSON_GRAMMAR[1]]},
+        )
+
+    assert LessonFiles(db.parent / "lessons").lessons() == []
