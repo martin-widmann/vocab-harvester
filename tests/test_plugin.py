@@ -95,8 +95,8 @@ def mcp_tool(name: str) -> str:
 
 def test_the_tutor_has_only_the_plugin_tools_and_can_start_only_its_subagents():
     # Only the sentence-writer stores example sentences; only the topic-finder
-    # reports Grammar topics and stores exercises.
-    subagent_tools = {"add_sentences", "report_topics", "add_exercises"}
+    # reports Grammar topics, stores exercises and writes the Lesson file.
+    subagent_tools = {"add_sentences", "report_topics", "add_exercises", "write_lesson"}
     assert tools_of("tutor") == {
         mcp_tool(name) for name in TOOL_NAMES - subagent_tools
     } | {f"Agent({PLUGIN}:sentence-writer)", f"Agent({PLUGIN}:topic-finder)"}
@@ -120,7 +120,9 @@ def test_there_is_a_topic_finder_agent():
 def test_the_topic_finder_reports_topics_and_stores_exercises_only_through_tools():
     tools = tools_of("topic-finder")
 
-    assert {mcp_tool("report_topics"), mcp_tool("add_exercises")} <= tools
+    assert {
+        mcp_tool("report_topics"), mcp_tool("add_exercises"), mcp_tool("write_lesson")
+    } <= tools
     assert tools <= {mcp_tool(name) for name in TOOL_NAMES}
 
 

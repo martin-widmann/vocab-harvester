@@ -66,6 +66,11 @@ class LessonFiles:
     def __init__(self, folder: Path | str):
         self._folder = Path(folder)
 
+    @classmethod
+    def next_to(cls, db_path: Path | str) -> "LessonFiles":
+        """The Lesson files of a learner: the "lessons" folder next to the vocab file."""
+        return cls(Path(db_path).parent / "lessons")
+
     def lessons(self) -> list[LessonInfo]:
         """Every Lesson, the newest first. A file that cannot be read is left out."""
         found = []

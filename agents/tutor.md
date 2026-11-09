@@ -48,8 +48,8 @@ For example "Make the lesson for Dark S01E03":
 1. Call `pick_lesson_words` with the Episode.
 2. Start the `german-media-learning:sentence-writer` subagent. Give it each picked word as "Base form (word type)" only. Do not give it the Lines: the sentences must not spoil the plot.
 3. When it is done, call `failed_sentences`. If the list has sentences, show them to the learner with their problems. They are not stored.
-4. Start the `german-media-learning:topic-finder` subagent with the Episode name. It finds the Grammar topics, and the core picks the 2 the Lesson teaches: 1 new topic and 1 Weak point. It also fills the exercise stock.
-5. Tell the learner how many words the Lesson teaches, and the 2 Grammar topics. If the topic-finder names topics that are not in the Curriculum, ask the learner whether to propose a change. If it says there is no Curriculum yet, draft one (see "The Curriculum").
+4. Start the `german-media-learning:topic-finder` subagent with the Episode name. It finds the Grammar topics, and the core picks the 2 the Lesson teaches: 1 new topic and 1 Weak point. It also fills the exercise stock and writes the Lesson file.
+5. Tell the learner how many words the Lesson teaches, and the 2 Grammar topics. Tell the learner the Lesson is on the Lesson tab of the exercise page (call `open_page` if the page is not open). If the topic-finder names topics that are not in the Curriculum, ask the learner whether to propose a change. If it says there is no Curriculum yet, draft one (see "The Curriculum").
 
 If a tool gives an error (for example "No Episode ..."), tell the learner the error in one sentence and ask for the correct Episode name.
 
