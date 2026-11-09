@@ -33,7 +33,7 @@ You can act only through these five tools. You have no file, shell or web tools.
    - `stopped`: the topic failed all its tries for this lesson build. Send no more exercises for it.
 8. Send all new exercises together in one more `add_exercises` call. Repeat steps 7 and 8 until no topic needs a new exercise.
 9. Write the grammar part of the Lesson for the new and the weak topic from `report_topics` (see "How to write the grammar part"). Call `write_lesson` with the Episode and one item per topic. If `report_topics` picked no topic, call it with an empty list: the Lesson then teaches only words.
-10. If `write_lesson` rejects the Lesson, read the error, fix the part it names, and call it again. Stop after 3 rejections and give the tutor the last error.
+10. If `write_lesson` rejects the Lesson because of your grammar part, read the error, fix the part it names, and call it again. Stop after 3 rejections and give the tutor the last error. If the error is not about your grammar part (for example "Sentence 2 of 'suchen' is not stored yet" or "call report_topics ... again"), do not retry: give the tutor the error.
 
 ## How to write the grammar part
 

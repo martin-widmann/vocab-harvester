@@ -16,7 +16,7 @@ from pathlib import Path
 from core.curriculum import Curriculum
 from core.frequency import FrequencyTable
 from core.grammar_topics import ExerciseStock
-from core.lesson_words import SECTION_COUNT, LessonWord, pick_lesson_words, section_of
+from core.lesson_words import SECTION_COUNT, SECTION_LENGTH, LessonWord, pick_lesson_words, section_of
 from core.sentences import MAX_RETRIES, SENTENCES_PER_WORD, SentenceChecker
 from core.subtitles import Line, read_lines
 from core.episode import subtitle_file
@@ -89,13 +89,23 @@ class LessonFiles:
                 return _load(path)
         raise ValueError(f"There is no Lesson {number}")
 
+    def of_episode(self, episode: str) -> dict | None:
+        """The Lesson file of an Episode, or None if it has none."""
+        for info in self.lessons():
+            if info.episode == episode:
+                return self.read(info.number)
+        return None
+
     def number_for(self, episode: str) -> int:
-        """The number of the Episode's Lesson; a new number if it has none yet."""
-        infos = self.lessons()
-        for info in infos:
+        """The number of the Episode's Lesson; a new number if it has none yet.
+
+        A new number comes after every Lesson file, also one that cannot be
+        read, so a new Lesson never replaces it.
+        """
+        for info in self.lessons():
             if info.episode == episode:
                 return info.number
-        return max((info.number for info in infos), default=0) + 1
+        return max((number for number, _ in self._files()), default=0) + 1
 
     def _write(self, lesson: dict) -> None:
         self._folder.mkdir(parents=True, exist_ok=True)
@@ -151,20 +161,35 @@ def write_lesson(
     it is first heard, with its word facts and stored example sentences, never
     with its episode Line. The Grammar topics are the 2 that report_topics
     picked for the Episode. A new write for the same Episode replaces its
-    Lesson and keeps its number.
+    Lesson but keeps its number and its words: once the Lesson is done, its
+    words are Taught words and no longer picked.
     """
     lines = read_lines(subtitle_file(episode_folder))
-    topics = _checked_grammar(episode, lines, stock, curriculum, grammar)
-    words = pick_lesson_words(episode_folder, store, frequency)
-    _check_sentences_stored(store, words)
+    topics = _checked_grammar(episode, lines, stock, curriculum, facts, grammar)
+    previous = lessons.of_episode(episode)
+    words = []
+    if previous is None:
+        words = pick_lesson_words(episode_folder, store, frequency)
+        _check_sentences_stored(store, words)
     _check_with_language_tool(checker, topics)
 
+    minutes = int(SECTION_LENGTH.total_seconds() // 60)
     sections: list[dict] = [
-        {"number": number, "words": [], "grammar": []}
+        {
+            "number": number,
+            # About how far into the Episode; the last Section runs to its end.
+            "start_minute": (number - 1) * minutes,
+            "end_minute": number * minutes if number < SECTION_COUNT else None,
+            "words": [],
+            "grammar": [],
+        }
         for number in range(1, SECTION_COUNT + 1)
     ]
     for word in sorted(words, key=lambda word: word.line.number):
         sections[word.section - 1]["words"].append(_word(word, store, facts))
+    if previous is not None:
+        for section, old in zip(sections, previous["sections"]):
+            section["words"] = old["words"]
     by_number = {line.number: line for line in lines}
     for topic in sorted(topics, key=_taught_at):
         sections[section_of(by_number[_taught_at(topic)]) - 1]["grammar"].append(topic)
@@ -188,6 +213,7 @@ def _checked_grammar(
     lines: list[Line],
     stock: ExerciseStock,
     curriculum: Curriculum,
+    facts: WordFacts,
     grammar: list[GrammarPart],
 ) -> list[dict]:
     """The Grammar topics of the Lesson file; ValueError if a part breaks a rule."""
@@ -201,7 +227,23 @@ def _checked_grammar(
     names_of = {status.topic.id: status.topic.name for status in curriculum.topics()}
     lines_of = {found.topic_id: found.lines for found in stock.found_topics(episode)}
     by_number = {line.number: line for line in lines}
-    episode_names = names(line.text for line in lines)
+    for topic_id in kinds:
+        if topic_id not in names_of:
+            raise ValueError(
+                f"Grammar topic {topic_id!r} is not in the Curriculum any more: "
+                f"call report_topics for {episode} again"
+            )
+        for number in lines_of.get(topic_id, []):
+            if number not in by_number:
+                raise ValueError(
+                    f"The Episode has no Line {number} any more: "
+                    f"call report_topics for {episode} again"
+                )
+    episode_names = {
+        found
+        for found in names(line.text for line in lines)
+        if not _is_common_noun(facts, found)
+    }
     episode_texts = {_plain(text) for line in lines for text in _texts_of(line)}
     seen: set[str] = set()
     topics = []
@@ -260,6 +302,12 @@ def _checked_grammar(
         if topic_id not in seen:
             raise ValueError(f"The Lesson needs the Grammar topic {topic_id!r}")
     return topics
+
+
+def _is_common_noun(facts: WordFacts, word: str) -> bool:
+    """A noun of the word facts data that spaCy took for a name, as "Hund"."""
+    found = facts.lookup(word, "NOUN")
+    return found.meaning_status == "checked" and found.gender is not None
 
 
 def _cleaned(part: GrammarPart) -> GrammarPart:
@@ -342,8 +390,9 @@ def _plain(text: str) -> str:
     return " ".join(_WORD.findall(text.lower()))
 
 
-def _has_word(text: str, word: str) -> bool:
-    return re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text) is not None
+def _has_word(text: str, name: str) -> bool:
+    """Whether the text uses the name, also with a genitive ending: "Marthas"."""
+    return re.search(rf"(?<!\w){re.escape(name)}(?:s|')?(?!\w)", text) is not None
 
 
 def _word(word: LessonWord, store: VocabStore, facts: WordFacts) -> dict:

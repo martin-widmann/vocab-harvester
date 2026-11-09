@@ -1,5 +1,7 @@
 """The Lesson file: the agent writes it through write_lesson, the page reads it."""
 
+import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -202,7 +204,10 @@ def test_the_lesson_has_3_sections_in_story_order_each_with_its_taught_words(wri
     lesson = write()
 
     assert lesson["episode"] == EPISODE
-    assert [section["number"] for section in lesson["sections"]] == [1, 2, 3]
+    assert [
+        (section["number"], section["start_minute"], section["end_minute"])
+        for section in lesson["sections"]
+    ] == [(1, 0, 15), (2, 15, 30), (3, 30, None)]
     assert [words_of(section) for section in lesson["sections"]] == [
         ["suchen", "Höhle"],
         ["helfen"],
@@ -399,3 +404,80 @@ def test_a_sentence_on_the_list_for_the_learner_is_left_out(write, store, checke
         "Satz 1 mit dem Wort helfen.",
         "Satz 3 mit dem Wort helfen.",
     ]
+
+
+def test_an_episode_with_no_grammar_topics_gets_a_lesson_with_words_only(
+    write, curriculum, stock, folder
+):
+    report_topics(curriculum, stock, EPISODE, read_lines(subtitle_file(folder)), [])
+
+    lesson = write(grammar=[])
+
+    assert [section["grammar"] for section in lesson["sections"]] == [[], [], []]
+    assert words_of(lesson["sections"][0]) == ["suchen", "Höhle"]
+
+
+def test_a_new_lesson_never_takes_the_number_of_an_unreadable_lesson_file(
+    write, lessons, tmp_path
+):
+    (tmp_path / "lessons").mkdir()
+    (tmp_path / "lessons" / "lesson-001.json").write_text("{not json", encoding="utf-8")
+
+    lesson = write()
+
+    assert lesson["number"] == 2
+    assert (tmp_path / "lessons" / "lesson-001.json").read_text("utf-8") == "{not json"
+
+
+def test_a_picked_topic_that_left_the_curriculum_must_be_reported_again(
+    write, lessons, curriculum
+):
+    curriculum.approve(curriculum.propose([DRAFT[0], DRAFT[2]]).number)
+
+    with pytest.raises(ValueError, match="'passiv-modalverb'.*report_topics"):
+        write()
+
+    assert lessons.lessons() == []
+
+
+def test_a_line_that_left_the_subtitles_must_be_reported_again(write, lessons, folder):
+    (folder / "episode.srt").unlink()
+    folder.rmdir()
+    write_episode(folder, LINES[:3])
+
+    with pytest.raises(ValueError, match="no Line 4.*report_topics"):
+        write()
+
+    assert lessons.lessons() == []
+
+
+def test_a_common_noun_spacy_takes_for_a_name_may_be_used(
+    write, curriculum, stock, folder
+):
+    (folder / "episode.srt").unlink()
+    folder.rmdir()
+    write_episode(folder, [*LINES, (41, "Hund, komm her!")])
+
+    lesson = write(grammar=[DATIV, replace(PASSIV, cases=["Der Hund muss gefüttert werden.", "Das darf nicht vergessen werden."])])
+
+    assert lesson["sections"][2]["grammar"][0]["cases"][0] == "Der Hund muss gefüttert werden."
+
+
+def test_a_new_write_keeps_the_words_of_the_lesson_after_they_are_taught(write, db):
+    first = write()
+    # What Finish does (a later ticket): the Lesson's words become Taught words.
+    with closing(sqlite3.connect(db)) as raw, raw:
+        raw.execute("UPDATE words SET state = 'Taught' WHERE state = 'Unknown'")
+
+    again = write(grammar=[replace(DATIV, rule="Helfen takes the dative."), PASSIV])
+
+    assert [words_of(s) for s in again["sections"]] == [
+        words_of(s) for s in first["sections"]
+    ]
+    assert again["sections"][1]["grammar"][0]["rule"] == "Helfen takes the dative."
+
+
+@pytest.mark.parametrize("name", ["Marthas", "Jonas'"])
+def test_a_name_with_a_genitive_ending_is_a_name(write, name):
+    with pytest.raises(ValueError, match="names from the Episode"):
+        write(grammar=[replace(DATIV, example=f"{name} Bruder hilft ihm."), PASSIV])

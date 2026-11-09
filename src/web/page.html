@@ -139,7 +139,8 @@ for (const button of document.querySelectorAll("#keys button")) {
 load().catch((error) => showError(String(error)));
 
 // The Lesson tab. Every text from a Lesson file goes in with textContent.
-let lessonsLoaded = false;
+// Each request gets a number; the answer of an older request is dropped.
+let lessonRequest = 0;
 
 function showTab(name) {
   for (const tab of ["check", "lesson"]) {
@@ -147,8 +148,8 @@ function showTab(name) {
     $(tab + "-tab").setAttribute("aria-selected", String(tab === name));
   }
   history.replaceState(null, "", location.pathname + location.search + (name === "lesson" ? "#lesson" : ""));
-  if (name === "lesson" && !lessonsLoaded) {
-    lessonsLoaded = true;
+  if (name === "lesson") {
+    // Read the list again each time: a Lesson may be written while the page is open.
     loadLessons().catch((error) => { $("lesson-status").textContent = String(error); });
   }
 }
@@ -161,9 +162,13 @@ function element(tag, text, className) {
 }
 
 async function loadLessons() {
+  const request = ++lessonRequest;
   const response = await fetch("/api/lessons");
+  if (request !== lessonRequest) return;
   if (!response.ok) { $("lesson-status").textContent = await errorText(response); return; }
   const lessons = await response.json();
+  if (request !== lessonRequest) return;
+  const shown = $("lesson-list").querySelector('[aria-current="true"]');
   const list = $("lesson-list");
   list.replaceChildren();
   if (!lessons.length) { $("lesson-status").textContent = "There is no Lesson yet."; return; }
@@ -173,30 +178,35 @@ async function loadLessons() {
     button.addEventListener("click", () => openLesson(info.number));
     list.append(button);
   }
+  const kept = shown && lessons.find((info) => String(info.number) === shown.dataset.number);
   const own = lessons.find((info) => info.episode === episode);
-  await openLesson((own || lessons[0]).number);
+  await openLesson((kept || own || lessons[0]).number);
 }
 
 async function openLesson(number) {
+  const request = ++lessonRequest;
   for (const button of $("lesson-list").children) {
     button.setAttribute("aria-current", String(button.dataset.number === String(number)));
   }
   $("lesson-content").replaceChildren();
   $("lesson-status").textContent = "Reading the Lesson…";
   const response = await fetch("/api/lessons/" + number);
+  if (request !== lessonRequest) return;
   if (!response.ok) { $("lesson-status").textContent = await errorText(response); return; }
   const lesson = await response.json();
+  if (request !== lessonRequest) return;
   $("lesson-status").textContent = "";
   const content = $("lesson-content");
   content.append(element("h2", `Lesson ${lesson.number} · ${lesson.episode}`));
   for (const section of lesson.sections) content.append(sectionView(section));
 }
 
-const MINUTES = ["about 0–15 min", "about 15–30 min", "about 30 min to the end"];
-
 function sectionView(section) {
   const view = element("section", null, "section");
-  view.append(element("h3", `Section ${section.number} · ${MINUTES[section.number - 1] || ""}`));
+  const minutes = section.end_minute === null
+    ? `about ${section.start_minute} min to the end`
+    : `about ${section.start_minute}–${section.end_minute} min`;
+  view.append(element("h3", `Section ${section.number} · ${minutes}`));
   if (!section.words.length && !section.grammar.length) {
     view.append(element("p", "Nothing new in this Section.", "muted"));
   }
