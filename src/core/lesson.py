@@ -453,20 +453,25 @@ def _check_texts(name: str, part: GrammarPart) -> None:
             raise ValueError(f"{name}: the {part_name} must be one line")
     if not MIN_EXERCISES <= len(part.exercises) <= MAX_EXERCISES:
         raise ValueError(f"{name}: give {MIN_EXERCISES} to {MAX_EXERCISES} exercises")
+    kinds = [*(kind.value for kind in ExerciseKind), *(kind.value for kind in OpenKind)]
     solved = set()
     for n, exercise in enumerate(part.exercises, 1):
         exercise_name = f"{name}: exercise {n}"
-        kinds = [*(kind.value for kind in ExerciseKind), *(kind.value for kind in OpenKind)]
         if exercise.kind not in kinds:
             raise ValueError(f"{exercise_name}: the kind must be one of {', '.join(kinds)}")
         if exercise.kind in OPEN_KINDS:
             _check_open_exercise(exercise_name, exercise)
         else:
             check_exercise(exercise_name, _stock_form(part.topic_id, exercise))
-        text = (exercise.kind in OPEN_KINDS, exercise.sentence, _solved(exercise))
-        if text in solved:
+        # Gap and choice exercises are the same with the same solved sentence;
+        # open exercises with the same kind and task.
+        if exercise.kind in OPEN_KINDS:
+            key = (exercise.kind, exercise.sentence)
+        else:
+            key = ("fixed", _solved(exercise))
+        if key in solved:
             raise ValueError(f"{name}: exercise {n} is in the Lesson twice")
-        solved.add(text)
+        solved.add(key)
     if not part.rule:
         raise ValueError(f"{name}: the rule is empty")
     if len(part.rule) > MAX_RULE_LENGTH:

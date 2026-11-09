@@ -276,3 +276,29 @@ def test_a_finished_lesson_sends_no_open_answer_to_the_grader(lessons, language_
             grader=grader_with(runner, language_tool),
         )
     assert runner.prompts == []
+
+
+class RewritingRunner:
+    """A grader run during which the Lesson is written again."""
+
+    def __init__(self, lessons, changed_lesson):
+        self.lessons, self.changed_lesson = lessons, changed_lesson
+
+    def run(self, prompt):
+        self.lessons._write(self.changed_lesson)
+        return reply(True, "Ich helfe dem Kind.", "Right.")
+
+
+def test_an_answer_is_not_saved_when_its_exercise_changed_while_the_grader_ran(
+    lessons, language_tool
+):
+    changed = json.loads(json.dumps(LESSON))
+    changed["sections"][0]["grammar"][0]["exercises"][0]["sentence"] = "We help the man."
+    runner = RewritingRunner(lessons, changed)
+
+    with pytest.raises(ValueError, match="changed"):
+        check_answer(
+            lessons, 1, "dativ:1", "Ich helfe dem Kind.",
+            grader=grader_with(runner, language_tool),
+        )
+    assert lessons.results(1)["answers"] == {}

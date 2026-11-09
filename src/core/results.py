@@ -89,9 +89,14 @@ def check_answer(
     # The grader takes a while: other answers are checked and saved meanwhile.
     result = grader.check(exercise, answer)
     with _RESULTS_LOCK:
-        _, saved = _open_for_answer(lessons, number, exercise_id)
+        now, saved = _open_for_answer(lessons, number, exercise_id)
         if saved is not None:
             return saved
+        if now != exercise:
+            raise ValueError(
+                f"Exercise {exercise_id!r} changed while the grader checked the "
+                "answer; read the Lesson again and answer it again"
+            )
         _save(lessons, number, exercise_id, answer, result)
     return result
 

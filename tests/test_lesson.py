@@ -678,3 +678,11 @@ def test_write_lesson_rejects_a_malformed_open_exercise(write, lessons, exercise
         write(grammar=[replace(DATIV, exercises=[DATIV.exercises[0], exercise]), PASSIV])
 
     assert lessons.lessons() == []
+
+
+def test_open_exercises_of_different_kinds_may_have_the_same_task(write):
+    task = "Ich helfe dem Mann. Why dem?"
+    explain = replace(EXPLAIN, sentence=task)
+    sentence = replace(OWN_SENTENCE, sentence=task, answer="Ich helfe meiner Schwester.")
+
+    write(grammar=[replace(DATIV, exercises=[DATIV.exercises[0], explain, sentence]), PASSIV])

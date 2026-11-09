@@ -13,6 +13,7 @@ does the task.
 
 import json
 import re
+import threading
 from typing import Protocol
 
 from core.lesson import OpenKind
@@ -43,6 +44,9 @@ class Grader:
     def __init__(self, runner: GraderRunner, checker: SentenceChecker | None = None):
         self._runner = runner
         self._checker = checker
+        # The web server checks answers in more than one thread; the checker
+        # counts its requests for the rate limit, one check at a time.
+        self._checker_lock = threading.Lock()
 
     def check(self, exercise: dict, answer: str) -> Result:
         """The result of an open answer to a Lesson exercise.
@@ -83,7 +87,8 @@ class Grader:
 
     def _language_tool_problems(self, answer: str) -> list[str]:
         try:
-            (problems,) = self._checker.check([answer])
+            with self._checker_lock:
+                (problems,) = self._checker.check([answer])
         except ValueError:
             return []  # LanguageTool cannot check it now; the grader can.
         return problems
