@@ -78,17 +78,22 @@ def _start_state(topic: Topic) -> TopicState:
     return TopicState.SOLID if topic.level in SOLID_LEVELS else TopicState.NOT_SEEN
 
 
+def check_topic_id(topic_id: str) -> None:
+    """Reject a topic id that is not lowercase letters and digits with hyphens."""
+    if not _TOPIC_ID.fullmatch(topic_id):
+        raise ValueError(
+            f"Topic id {topic_id!r} must be lowercase letters and digits "
+            'with single hyphens, for example "konjunktiv-2"'
+        )
+
+
 def _reject_malformed(topics: list[Topic]) -> None:
     """Reject a malformed Curriculum before it is kept."""
     if not topics:
         raise ValueError("A Curriculum needs Grammar topics; this one has no Grammar topics")
     seen: set[str] = set()
     for topic in topics:
-        if not _TOPIC_ID.fullmatch(topic.id):
-            raise ValueError(
-                f"Topic id {topic.id!r} must be lowercase letters and digits "
-                'with single hyphens, for example "konjunktiv-2"'
-            )
+        check_topic_id(topic.id)
         if topic.id in seen:
             raise ValueError(f"Topic id {topic.id!r} is in the proposal twice")
         seen.add(topic.id)

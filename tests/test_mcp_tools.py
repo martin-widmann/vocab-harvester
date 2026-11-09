@@ -4,7 +4,15 @@ from pathlib import Path
 import pytest
 from fakes import FakeClock, FakeLanguageTool
 
-from core import Curriculum, VocabStore, WordState, build_frequency_table, import_word_facts
+from core import (
+    Curriculum,
+    ExerciseStock,
+    FoundTopic,
+    VocabStore,
+    WordState,
+    build_frequency_table,
+    import_word_facts,
+)
 from core.language_tool import LanguageToolError
 from mcp_server.tools import ToolError, Toolbox
 
@@ -417,3 +425,93 @@ def test_curriculum_gaps_tool_gives_one_new_and_one_weak_topic(toolbox, db):
 def test_curriculum_gaps_tool_before_a_curriculum_is_approved_is_a_tool_error(toolbox):
     with pytest.raises(ToolError, match="No Curriculum"):
         toolbox.call("curriculum_gaps", {"found_topics": ["dativ"]})
+
+
+def test_report_topics_tool_keeps_the_topics_and_gives_the_lesson_grammar(toolbox, db):
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
+    with closing(Curriculum(db)) as curriculum:
+        curriculum.review("dativ", passed=False)
+
+    grammar = toolbox.call(
+        "report_topics",
+        {
+            "episode": "Dark/S01E01",
+            "topics": [
+                {"topic_id": "dativ", "lines": [2]},
+                {"topic_id": "konjunktiv-1", "lines": [4, 3]},
+                {"topic_id": "futur-2", "lines": [1]},
+            ],
+        },
+    )
+
+    konjunktiv = {"id": "konjunktiv-1", "name": "Konjunktiv I", "level": "B2"}
+    dativ = {"id": "dativ", "name": "Dativ", "level": "A2"}
+    assert grammar == {
+        "new": {"topic": konjunktiv, "lines": [3, 4]},
+        "weak": {"topic": dativ, "lines": [2]},
+        "not_in_curriculum": ["futur-2"],
+        "refill": [
+            {"topic": konjunktiv, "in_stock": 0, "needed": 5},
+            {"topic": dativ, "in_stock": 0, "needed": 5},
+        ],
+    }
+    with closing(ExerciseStock(db)) as stock:
+        assert stock.found_topics("Dark/S01E01")[0] == FoundTopic("dativ", [2])
+
+
+def test_report_topics_tool_with_a_line_the_episode_does_not_have_is_a_tool_error(
+    toolbox, db
+):
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
+
+    with pytest.raises(ToolError, match="no Line 99"):
+        toolbox.call(
+            "report_topics",
+            {"episode": "Dark/S01E01", "topics": [{"topic_id": "dativ", "lines": [99]}]},
+        )
+
+
+def test_add_exercises_tool_stores_the_exercises_languagetool_passes(toolbox, db):
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
+    toolbox.call(
+        "report_topics",
+        {"episode": "Dark/S01E01", "topics": [{"topic_id": "konjunktiv-1", "lines": [3]}]},
+    )
+    exercise = {
+        "topic_id": "konjunktiv-1",
+        "kind": "choice",
+        "sentence": "Sie sagt, sie ___ krank.",
+        "answer": "sei",
+        "options": ["sei", "ist", "wäre"],
+        "explanation": "Indirekte Rede: Konjunktiv I.",
+    }
+
+    results = toolbox.call(
+        "add_exercises",
+        {
+            "exercises": [
+                exercise,
+                {**exercise, "sentence": "Er sagt, das ___ falsch.", "answer": "sei"},
+            ]
+        },
+    )
+
+    assert results == [
+        {
+            "topic_id": "konjunktiv-1",
+            "sentence": "Sie sagt, sie ___ krank.",
+            "status": "stored",
+            "problems": [],
+            "retries_left": None,
+        },
+        {
+            "topic_id": "konjunktiv-1",
+            "sentence": "Er sagt, das ___ falsch.",
+            "status": "retry",
+            "problems": ["Fehler: falsch"],
+            "retries_left": 19,
+        },
+    ]
+    with closing(ExerciseStock(db)) as stock:
+        (stored,) = stock.unused("konjunktiv-1")
+    assert stored.exercise.options == ["sei", "ist", "wäre"]

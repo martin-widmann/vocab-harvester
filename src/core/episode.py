@@ -37,6 +37,12 @@ def find_episode(media_root: Path | str, name: str) -> Path:
     return folder
 
 
+def episode_key(media_root: Path | str, name: str) -> str:
+    """One key per Episode, however its name is written: "Dark/S01E03"."""
+    root = Path(media_root).resolve()
+    return find_episode(root, name).relative_to(root).as_posix()
+
+
 def subtitle_file(episode_folder: Path | str) -> Path:
     """The original .srt of an Episode folder (not the tagged one).
 
