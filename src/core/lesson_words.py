@@ -53,7 +53,7 @@ def pick_lesson_words(
                 word.base_form,
                 word.word_type,
                 frequency.count(word.base_form),
-                _section(line),
+                section_of(line),
                 line,
                 word.seen_form,
             )
@@ -64,5 +64,6 @@ def pick_lesson_words(
     return ranked[:LESSON_WORD_LIMIT]
 
 
-def _section(line: Line) -> int:
+def section_of(line: Line) -> int:
+    """The Section of a Line: 1, 2 or 3."""
     return min(int(line.start // SECTION_LENGTH) + 1, SECTION_COUNT)

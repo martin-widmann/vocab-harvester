@@ -131,6 +131,12 @@ CREATE TABLE IF NOT EXISTS exercises (
     explanation TEXT NOT NULL,
     used INTEGER NOT NULL DEFAULT 0
 );
+-- The 2 topics the latest report picked for each Episode's Lesson.
+CREATE TABLE IF NOT EXISTS episode_picks (
+    episode TEXT PRIMARY KEY,
+    new TEXT,
+    weak TEXT
+);
 -- The topics a Lesson picked at least once: their stock is refilled when low.
 CREATE TABLE IF NOT EXISTS stock_topics (
     topic_id TEXT PRIMARY KEY
@@ -164,6 +170,17 @@ class ExerciseStock:
         )
         return [FoundTopic(topic_id, json.loads(lines)) for topic_id, lines in rows]
 
+    def picked_topics(self, episode: str) -> dict[str, str | None] | None:
+        """The ids of the topics the last report picked for an Episode's Lesson.
+
+        {"new": ..., "weak": ...}, either None when the Episode has none; None
+        when no report for the Episode was made.
+        """
+        row = self._db.execute(
+            "SELECT new, weak FROM episode_picks WHERE episode = ?", (episode,)
+        ).fetchone()
+        return None if row is None else {"new": row[0], "weak": row[1]}
+
     def unused(self, topic_id: str) -> list[StoredExercise]:
         """The exercises of a topic no review has used yet, oldest first."""
         rows = self._db.execute(
@@ -193,6 +210,12 @@ class ExerciseStock:
         self._db.executemany(
             "INSERT INTO episode_topics (episode, topic_id, lines) VALUES (?, ?, ?)",
             [(episode, item.topic_id, json.dumps(item.lines)) for item in found],
+        )
+
+    def _keep_picks(self, episode: str, new: Topic | None, weak: Topic | None) -> None:
+        self._db.execute(
+            "INSERT OR REPLACE INTO episode_picks (episode, new, weak) VALUES (?, ?, ?)",
+            (episode, new and new.id, weak and weak.id),
         )
 
     def _start_build(
@@ -304,6 +327,7 @@ def report_topics(
             refill.append(Refill(topic, in_stock, EXERCISES_PER_TOPIC - in_stock))
     with stock._db:
         stock._keep_found(episode, found)
+        stock._keep_picks(episode, gaps.new, gaps.weak)
         stock._start_build(episode, picks, refill)
     return LessonGrammar(
         picked(gaps.new), picked(gaps.weak), gaps.not_in_curriculum, refill
