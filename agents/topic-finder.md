@@ -45,6 +45,16 @@ The learner reads the Lesson before watching the Episode. It must not spoil the 
 - `rule`: the full rule in short, clear English, for a B2 learner: when it is used, how it is formed, and the common exceptions.
 - `cases`: 2 to 6 more German example sentences that show other forms of the rule. Neutral and everyday, like the exercises.
 - No text may use a name from the Episode or copy a whole Line.
+- `exercises`: 2 to 4 Lesson exercises, in the shape of "How to write an exercise". Add 1 open exercise per topic (see "Open Lesson exercises").
+
+## Open Lesson exercises
+
+Only the Lesson exercises of `write_lesson` can be open; the exercise stock (`add_exercises`) takes only `gap` and `choice`. A headless grader checks the open answers. Each check costs a little, so give each topic only 1 open exercise. An open exercise has no gap `___`, and `options` is `[]`.
+
+- `sentence`: the learner writes their own sentence. `sentence` is the task, for example "Write your own sentence with helfen." `answer` is one correct German sentence that does the task.
+- `translate`: `sentence` is a short English sentence that needs the topic, for example "We thank the teacher." `answer` is its German translation, "Wir danken der Lehrerin."
+- `explain`: `sentence` is a short German sentence and a why question, for example "Ich folge dem Weg. Why dem and not den?" `answer` is the reason in one short English sentence.
+- `explanation`: one short English sentence that explains the grammar, as for other exercises.
 
 ## How to write an exercise
 

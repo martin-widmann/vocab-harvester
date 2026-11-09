@@ -29,7 +29,16 @@ from core.grammar_topics import (
     add_exercises,
     report_topics,
 )
-from core.lesson import GrammarPart, LessonExercise, LessonFiles, LessonInfo, write_lesson
+from core.grader import Grader, GraderError, GraderRunner
+from core.lesson import (
+    OPEN_KINDS,
+    GrammarPart,
+    LessonExercise,
+    LessonFiles,
+    LessonInfo,
+    OpenKind,
+    write_lesson,
+)
 from core.lesson_words import LessonWord, pick_lesson_words
 from core.results import Finished, Result, TopicResult, check_answer, finish_lesson, lesson_for_page
 from core.sentences import (
@@ -50,6 +59,7 @@ from core.word_facts import Facts, WordFacts, import_word_facts
 
 __all__ = [
     "CHECK_KEYS",
+    "OPEN_KINDS",
     "Curriculum",
     "Exercise",
     "ExerciseKind",
@@ -60,6 +70,9 @@ __all__ = [
     "Finished",
     "FoundTopic",
     "FrequencyTable",
+    "Grader",
+    "GraderError",
+    "GraderRunner",
     "GrammarPart",
     "Issue",
     "LanguageToolBusy",
@@ -71,6 +84,7 @@ __all__ = [
     "LessonWord",
     "Line",
     "NewWord",
+    "OpenKind",
     "PickedTopic",
     "Proposal",
     "Refill",

@@ -381,7 +381,7 @@ def test_an_unreadable_lesson_file_is_left_out_of_the_list(write, lessons, tmp_p
             [DATIV, replace(PASSIV, exercises=[
                 PASSIV.exercises[0], replace(PASSIV.exercises[1], kind="article"),
             ])],
-            "kind must be one of gap, choice",
+            "kind must be one of gap, choice, sentence, translate, explain",
         ),
         (
             [DATIV, replace(PASSIV, exercises=[PASSIV.exercises[0]] * 2)],
@@ -600,3 +600,89 @@ def test_a_lesson_with_answers_is_not_replaced(write, lessons):
 
     assert lessons.read(1)["sections"][1]["grammar"][0]["rule"] != "Helfen takes the dative."
     assert lessons.results(1)["answers"]["Höhle:article"]["right"] is True
+
+
+TRANSLATE = LessonExercise(
+    "translate", "We thank the teacher.", "Wir danken der Lehrerin.", [],
+    "danken takes the dative.",
+)
+EXPLAIN = LessonExercise(
+    "explain", "Ich folge dem Weg. Why dem and not den?",
+    "folgen takes a dative object, and the dative of der Weg is dem Weg.",
+    [], "folgen takes the dative.",
+)
+OWN_SENTENCE = LessonExercise(
+    "sentence", "Write your own sentence with helfen.", "Ich helfe meiner Schwester.",
+    [], "helfen takes the dative.",
+)
+OPEN_DATIV = replace(DATIV, exercises=[DATIV.exercises[0], TRANSLATE, EXPLAIN, OWN_SENTENCE])
+
+
+def test_a_grammar_topic_may_have_open_exercises_the_grader_checks(write):
+    lesson = write(grammar=[OPEN_DATIV, PASSIV])
+
+    (dativ,) = lesson["sections"][1]["grammar"]
+    assert [(exercise["id"], exercise["kind"]) for exercise in dativ["exercises"]] == [
+        ("dativ:1", "gap"), ("dativ:2", "translate"), ("dativ:3", "explain"),
+        ("dativ:4", "sentence"),
+    ]
+    assert dativ["exercises"][1] == {
+        "id": "dativ:2",
+        "kind": "translate",
+        "sentence": "We thank the teacher.",
+        "answer": "Wir danken der Lehrerin.",
+        "options": [],
+        "explanation": "danken takes the dative.",
+    }
+
+
+def test_the_german_answers_of_open_exercises_are_checked_by_languagetool(
+    write, language_tool
+):
+    write(grammar=[OPEN_DATIV, PASSIV])
+
+    checked = language_tool.texts[-1]
+    assert "Wir danken der Lehrerin." in checked
+    assert "Ich helfe meiner Schwester." in checked
+    assert "Why dem and not den?" not in checked
+    assert "We thank the teacher." not in checked
+
+
+def test_a_wrong_german_answer_of_an_open_exercise_is_rejected(write, lessons):
+    wrong = replace(TRANSLATE, answer="Wir danken falsch.")
+    with pytest.raises(ValueError, match="Fehler: falsch"):
+        write(grammar=[replace(DATIV, exercises=[DATIV.exercises[0], wrong]), PASSIV])
+
+    assert lessons.lessons() == []
+
+
+@pytest.mark.parametrize(
+    "exercise, problem",
+    [
+        (replace(TRANSLATE, options=["a", "b"]), "has no options"),
+        (replace(TRANSLATE, sentence="We thank ___ teacher."), "no gap"),
+        (replace(OWN_SENTENCE, answer=" "), "answer is empty"),
+        (replace(EXPLAIN, sentence=""), "sentence is empty"),
+        (replace(EXPLAIN, explanation="Line one.\nLine two."), "one line"),
+        (replace(TRANSLATE, sentence="We " * 120), "too long"),
+        (replace(TRANSLATE, answer="Wir danken Martha."), "Martha"),
+        (replace(TRANSLATE, answer="Er gab nicht auf."), "is a Line of the Episode"),
+    ],
+    ids=[
+        "options", "gap", "empty answer", "empty task", "two-line explanation",
+        "long task", "name", "episode line",
+    ],
+)
+def test_write_lesson_rejects_a_malformed_open_exercise(write, lessons, exercise, problem):
+    with pytest.raises(ValueError, match=problem):
+        write(grammar=[replace(DATIV, exercises=[DATIV.exercises[0], exercise]), PASSIV])
+
+    assert lessons.lessons() == []
+
+
+def test_open_exercises_of_different_kinds_may_have_the_same_task(write):
+    task = "Ich helfe dem Mann. Why dem?"
+    explain = replace(EXPLAIN, sentence=task)
+    sentence = replace(OWN_SENTENCE, sentence=task, answer="Ich helfe meiner Schwester.")
+
+    write(grammar=[replace(DATIV, exercises=[DATIV.exercises[0], explain, sentence]), PASSIV])

@@ -16,6 +16,7 @@ from core import (
     LessonExercise,
     LessonFiles,
     Line,
+    OpenKind,
     SentenceChecker,
     SentenceToStore,
     Topic,
@@ -106,7 +107,10 @@ _EXERCISE = {
 _LESSON_EXERCISE = {
     "type": "object",
     "properties": {
-        "kind": {"type": "string", "enum": ["gap", "choice"]},
+        "kind": {
+            "type": "string",
+            "enum": ["gap", "choice", *(kind.value for kind in OpenKind)],
+        },
         "sentence": {"type": "string"},
         "answer": {"type": "string"},
         "options": {"type": "array", "items": {"type": "string"}},
@@ -451,11 +455,19 @@ class Toolbox:
                     "sentences of the rule; exercises, 2 to 4 Lesson exercises "
                     "of the rule, in the same shape as add_exercises but without "
                     "topic_id (the learner sees no answer or explanation until "
-                    "they answer). The core adds a der/die/das exercise for each "
+                    "they answer). A Lesson exercise may also be open, checked by "
+                    'the grader: kind "sentence" (sentence is the task, for '
+                    'example "Write your own sentence with helfen."; answer one '
+                    'correct German sentence), "translate" (sentence is an '
+                    "English sentence; answer its German translation) or "
+                    '"explain" (sentence is a German sentence and a why '
+                    "question; answer the reason in one short English sentence). "
+                    "An open exercise has no gap and options is []. The core adds a der/die/das exercise for each "
                     "noun with a gender. No text may use a name of a person or "
                     "place from the Episode or copy a whole Line. LanguageTool "
-                    "checks the example, the cases and each exercise with its "
-                    "answer in the gap. A Lesson that already has answers cannot "
+                    "checks the example, the cases, each exercise with its "
+                    "answer in the gap, and the German answer of each sentence "
+                    "and translate exercise. A Lesson that already has answers cannot "
                     "be replaced. A Lesson that breaks a "
                     "rule is rejected and nothing is written: fix it and call "
                     "again. A new call for the same Episode replaces its Lesson. "

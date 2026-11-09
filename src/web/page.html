@@ -33,8 +33,9 @@
   .rule { white-space: pre-line; }
   .exercise { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 8px; }
   .exercise form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .exercise input { font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+  .exercise input, .exercise textarea { font: inherit; padding: 4px 8px; border: 1px solid var(--line);
                     border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .exercise textarea { flex: 1 1 100%; resize: vertical; }
   .exercise button, #finish { font: inherit; padding: 4px 12px; border: 1px solid var(--line);
                               border-radius: 6px; background: none; color: var(--fg); cursor: pointer; }
   .exercise button:disabled, #finish:disabled { cursor: default; opacity: .6; }
@@ -213,11 +214,20 @@ async function openLesson(number) {
   content.append(finishView());
 }
 
+// What the learner does in an open exercise; the grader checks the answer.
+const OPEN_TASKS = {
+  sentence: "Write your own sentence.",
+  translate: "Translate into German.",
+  explain: "Explain why.",
+};
+
 // The Lesson on the page: its number, the saved results by exercise id, finished.
 let shownLesson = null;
 
 function exerciseView(exercise) {
   const view = element("div", null, "exercise");
+  const open = OPEN_TASKS[exercise.kind];
+  if (open) view.append(element("p", open, "muted"));
   view.append(element("p", exercise.sentence));
   const form = element("form");
   const result = element("p", null, "result");
@@ -230,6 +240,19 @@ function exerciseView(exercise) {
       button.addEventListener("click", () => send(option));
       form.append(button);
     }
+  } else if (open) {
+    const input = element("textarea");
+    input.rows = 2;
+    input.maxLength = 500;
+    input.setAttribute("aria-label", open);
+    input.placeholder = exercise.kind === "explain" ? "Your reason, in English or German" : "Your German sentence";
+    // The answer is one sentence: Enter checks it, as in the other exercises.
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); }
+    });
+    const button = element("button", "Check");
+    form.append(input, button);
+    form.addEventListener("submit", (event) => { event.preventDefault(); send(input.value); });
   } else {
     const input = element("input");
     input.setAttribute("aria-label", exercise.kind === "article" ? "der, die or das" : "Your answer");
@@ -249,6 +272,10 @@ function exerciseView(exercise) {
 async function checkExercise(exercise, answer, form, result) {
   if (!answer.trim()) return;
   lockForm(form);
+  if (OPEN_TASKS[exercise.kind]) {
+    result.className = "muted";
+    result.textContent = "Checking… this can take a minute.";
+  }
   const lesson = shownLesson;
   try {
     const response = await fetch(`/api/lessons/${lesson.number}/answers`, {
@@ -274,7 +301,7 @@ async function checkExercise(exercise, answer, form, result) {
 
 function showResult(checked, form, result, answer) {
   lockForm(form);
-  const input = form.querySelector("input");
+  const input = form.querySelector("input, textarea");
   if (input) input.value = answer;
   for (const button of form.querySelectorAll("button")) {
     if (button.textContent === answer) button.setAttribute("aria-pressed", "true");
@@ -287,11 +314,11 @@ function showResult(checked, form, result, answer) {
 }
 
 function lockForm(form) {
-  for (const control of form.querySelectorAll("input, button")) control.disabled = true;
+  for (const control of form.querySelectorAll("input, textarea, button")) control.disabled = true;
 }
 
 function unlockForm(form) {
-  for (const control of form.querySelectorAll("input, button")) control.disabled = false;
+  for (const control of form.querySelectorAll("input, textarea, button")) control.disabled = false;
 }
 
 function lessonExercises(lesson) {
