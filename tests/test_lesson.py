@@ -3,11 +3,11 @@
 import sqlite3
 from contextlib import closing
 from dataclasses import asdict, replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from fakes import FakeClock, FakeLanguageTool
+from fakes import FakeClock, FakeDateClock, FakeLanguageTool
 
 from core import (
     Curriculum,
@@ -26,6 +26,8 @@ from core import (
     add_sentences,
     build_frequency_table,
     check_answer,
+    due_cards,
+    finish_lesson,
     import_word_facts,
     new_words,
     read_lines,
@@ -686,3 +688,24 @@ def test_open_exercises_of_different_kinds_may_have_the_same_task(write):
     sentence = replace(OWN_SENTENCE, sentence=task, answer="Ich helfe meiner Schwester.")
 
     write(grammar=[replace(DATIV, exercises=[DATIV.exercises[0], explain, sentence]), PASSIV])
+
+
+def test_a_finished_lesson_gives_review_cards_with_the_episode_line_and_facts(
+    write, lessons, store, curriculum
+):
+    write()
+    finish_lesson(lessons, 1, store=store, curriculum=curriculum)
+
+    cards = {
+        card.base_form: card
+        for card in due_cards(store, FakeDateClock(datetime(2026, 11, 9, tzinfo=timezone.utc)))
+    }
+
+    assert set(cards) == UNKNOWN
+    aufgeben = cards["aufgeben"]
+    assert (aufgeben.seen_form, aufgeben.context) == ("gab auf", "Er **gab** nicht **auf**.")
+    assert aufgeben.meaning == "to give up, to quit; to post (a letter)"
+    assert aufgeben.needs_article is False
+    hoehle = cards["Höhle"]
+    assert hoehle.context == "Die Polizei sucht den Jungen in der **Höhle**."
+    assert hoehle.needs_article is True

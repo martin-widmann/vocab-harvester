@@ -14,16 +14,20 @@ from core import (
     GraderError,
     LessonFiles,
     NewWord,
+    SystemDateClock,
     VocabStore,
     check_answer,
+    due_cards,
     find_episode,
     finish_lesson,
+    grade_card,
     lesson_for_page,
     new_words,
     record_answer,
 )
 from core.claude_grader import ClaudeGrader
 from core.language_tool import LanguageTool, SystemClock
+from core.review import Clock
 from core.sentences import SentenceChecker
 
 PAGE = Path(__file__).parent / "page.html"
@@ -41,15 +45,28 @@ class LessonAnswer(BaseModel):
     answer: str
 
 
-def create_app(media_root: Path, db_path: Path, grader: Grader | None = None) -> FastAPI:
+class Grade(BaseModel):
+    base_form: str
+    rating: str
+    article: str | None = None
+
+
+def create_app(
+    media_root: Path,
+    db_path: Path,
+    grader: Grader | None = None,
+    clock: Clock | None = None,
+) -> FastAPI:
     """The web server. `grader` checks open answers; by default the grader agent.
 
     One grader for the whole server, so the LanguageTool rate limit holds
-    across answers.
+    across answers. `clock` gives the review dates; by default the computer's.
     """
     app = FastAPI(title=APP_TITLE)
     if grader is None:
         grader = Grader(ClaudeGrader(), SentenceChecker(LanguageTool(), SystemClock()))
+    if clock is None:
+        clock = SystemDateClock()
 
     @app.get("/", include_in_schema=False)
     def page() -> FileResponse:
@@ -122,6 +139,27 @@ def create_app(media_root: Path, db_path: Path, grader: Grader | None = None) ->
             "topics": [
                 {**asdict(topic), "state": topic.state.value} for topic in finished.topics
             ],
+        }
+
+    @app.get("/api/reviews")
+    def reviews() -> list[dict]:
+        with closing(VocabStore(db_path)) as store:
+            return [asdict(card) for card in due_cards(store, clock)]
+
+    @app.post("/api/reviews")
+    def grade(grade: Grade) -> dict:
+        try:
+            with closing(VocabStore(db_path)) as store:
+                graded = grade_card(
+                    store, grade.base_form, grade.rating, clock, article=grade.article
+                )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+        return {
+            "base_form": graded.base_form,
+            "rating": graded.rating,
+            "due": graded.due.isoformat(),
+            "article": None if graded.article is None else asdict(graded.article),
         }
 
     return app

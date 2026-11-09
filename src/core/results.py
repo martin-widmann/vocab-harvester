@@ -189,7 +189,7 @@ def finish_lesson(
         for section in lesson["sections"]:
             for word in section["words"]:
                 if store.state_of(word["base_form"]) == WordState.UNKNOWN:
-                    store.set_state(word["base_form"], WordState.TAUGHT)
+                    store.teach(word["base_form"], lesson["episode"])
                     taught.append(word["base_form"])
         in_curriculum = {status.topic.id for status in curriculum.topics()}
         topics = []

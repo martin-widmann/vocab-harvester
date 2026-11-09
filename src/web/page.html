@@ -52,6 +52,17 @@
   [data-key="K"] { color: var(--known); } [data-key="U"] { color: var(--unknown); }
   [data-key="X"] { color: var(--excluded); }
   #error { color: #c0392b; min-height: 1.5em; }
+  #review-context { font-size: 1.3rem; white-space: pre-line; margin: 24px 0; }
+  #review-word { font-size: 2.2rem; font-weight: 600; overflow-wrap: anywhere; }
+  #review-card form { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+  #review-card input { font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+                       border-radius: 6px; background: var(--bg); color: var(--fg); }
+  #review-card button { font: inherit; padding: 6px 14px; border: 1px solid var(--line);
+                        border-radius: 6px; background: none; color: var(--fg); cursor: pointer; }
+  #review-show { margin-top: 16px; }
+  #review-grades { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+  #review-grades kbd { margin-right: 4px; color: var(--muted); }
+  #review-meaning { font-size: 1.2rem; margin-top: 16px; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -59,6 +70,7 @@
 <nav role="tablist">
   <button role="tab" id="check-tab" aria-controls="check" aria-selected="true">Check</button>
   <button role="tab" id="lesson-tab" aria-controls="lesson" aria-selected="false">Lesson</button>
+  <button role="tab" id="review-tab" aria-controls="review" aria-selected="false">Review</button>
 </nav>
 <main id="check" role="tabpanel" aria-labelledby="check-tab">
   <p id="status">Reading the Episode…</p>
@@ -77,6 +89,32 @@
   <div id="lesson-list" aria-label="Lessons"></div>
   <p id="lesson-status" class="muted">Reading the Lessons…</p>
   <article id="lesson-content"></article>
+</main>
+<main id="review" role="tabpanel" aria-labelledby="review-tab" hidden>
+  <p id="review-status" class="muted">Reading the due cards…</p>
+  <section id="review-card" hidden>
+    <p id="review-context"></p>
+    <div id="review-word"></div>
+    <div id="review-seen" class="muted"></div>
+    <form id="review-article" hidden>
+      <input id="review-article-input" aria-label="der, die or das" placeholder="der, die or das" autocomplete="off">
+    </form>
+    <button id="review-show" type="button">Show the meaning</button>
+    <div id="review-back" hidden>
+      <p id="review-meaning"></p>
+      <div id="review-grades">
+        <button type="button" data-rating="Again"><kbd>1</kbd>Again</button>
+        <button type="button" data-rating="Hard"><kbd>2</kbd>Hard</button>
+        <button type="button" data-rating="Good"><kbd>3</kbd>Good</button>
+        <button type="button" data-rating="Easy"><kbd>4</kbd>Easy</button>
+      </div>
+    </div>
+    <div id="review-result" hidden>
+      <p id="review-article-result" aria-live="polite"></p>
+      <button id="review-next" type="button">Next card</button>
+    </div>
+  </section>
+  <p id="review-error" class="wrong" role="alert"></p>
 </main>
 <script>
 const episode = new URLSearchParams(location.search).get("episode") || "";
@@ -154,11 +192,14 @@ load().catch((error) => showError(String(error)));
 let lessonRequest = 0;
 
 function showTab(name) {
-  for (const tab of ["check", "lesson"]) {
+  for (const tab of ["check", "lesson", "review"]) {
     $(tab).hidden = tab !== name;
     $(tab + "-tab").setAttribute("aria-selected", String(tab === name));
   }
-  history.replaceState(null, "", location.pathname + location.search + (name === "lesson" ? "#lesson" : ""));
+  history.replaceState(null, "", location.pathname + location.search + (name === "check" ? "" : "#" + name));
+  if (name === "review") {
+    loadReviews().catch((error) => { $("review-status").textContent = String(error); });
+  }
   if (name === "lesson") {
     // Read the list again each time: a Lesson may be written while the page is open.
     loadLessons().catch((error) => { $("lesson-status").textContent = String(error); });
@@ -419,9 +460,130 @@ function grammarView(topic) {
   return view;
 }
 
+// The Review tab: one due vocab card at a time. The learner says the meaning
+// in their head, shows it, and grades themselves. A noun also needs der, die
+// or das, which the server checks.
+let reviewCards = [], reviewIndex = 0, reviewBusy = false, reviewDone = 0;
+
+async function loadReviews() {
+  const response = await fetch("/api/reviews");
+  if (!response.ok) { $("review-status").textContent = await errorText(response); return; }
+  reviewCards = await response.json();
+  reviewIndex = 0;
+  showReview();
+}
+
+function showReview() {
+  const card = reviewCards[reviewIndex];
+  $("review-card").hidden = !card;
+  $("review-error").textContent = "";
+  if (!card) {
+    $("review-status").textContent = reviewDone
+      ? `${reviewDone} cards reviewed. No more cards are due now.`
+      : "No vocab cards are due now.";
+    return;
+  }
+  $("review-status").textContent = `Card ${reviewIndex + 1} of ${reviewCards.length}`;
+  // The word in the episode Line is in **bold**: every other part of the split.
+  $("review-context").replaceChildren(...card.context.split("**").map(
+    (part, index) => index % 2 ? element("b", part) : document.createTextNode(part)));
+  $("review-word").textContent = card.base_form;
+  $("review-seen").textContent = card.seen_form && card.seen_form !== card.base_form
+    ? `heard as: ${card.seen_form} · ${card.word_type}` : card.word_type;
+  $("review-article").hidden = !card.needs_article;
+  $("review-article-input").value = "";
+  $("review-article-input").disabled = false;
+  $("review-show").hidden = false;
+  $("review-back").hidden = true;
+  $("review-result").hidden = true;
+  $("review-meaning").textContent = card.meaning || "No meaning in the word facts data.";
+  if (card.needs_article) $("review-article-input").focus();
+}
+
+function showMeaning() {
+  const card = reviewCards[reviewIndex];
+  if (!card || !$("review-back").hidden || !$("review-result").hidden) return;
+  if (card.needs_article && !$("review-article-input").value.trim()) {
+    $("review-error").textContent = "Type der, die or das first.";
+    return;
+  }
+  $("review-error").textContent = "";
+  $("review-article-input").disabled = true;
+  $("review-show").hidden = true;
+  $("review-back").hidden = false;
+}
+
+async function gradeReview(rating) {
+  const card = reviewCards[reviewIndex];
+  if (reviewBusy || !card || $("review-back").hidden) return;
+  reviewBusy = true;
+  try {
+    const response = await fetch("/api/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        base_form: card.base_form,
+        rating,
+        article: card.needs_article ? $("review-article-input").value : null,
+      }),
+    });
+    if (!response.ok) {
+      $("review-error").textContent = await errorText(response);
+      if (card.needs_article) {
+        // A bad article: type it again.
+        $("review-article-input").disabled = false;
+        $("review-back").hidden = true;
+        $("review-show").hidden = false;
+      }
+      return;
+    }
+    const graded = await response.json();
+    reviewDone += 1;
+    if (!graded.article) return nextReview();
+    $("review-back").hidden = true;
+    $("review-result").hidden = false;
+    const result = graded.article;
+    $("review-article-result").replaceChildren(
+      element("span", result.right ? "Right. " : "Wrong. ", result.right ? "right" : "wrong"),
+      element("span", result.right ? result.reason : `${result.correction} · ${result.reason}`),
+    );
+    $("review-next").focus();
+  } catch (error) {
+    $("review-error").textContent = `The grade was not saved: ${error}`;
+  } finally {
+    reviewBusy = false;
+  }
+}
+
+function nextReview() {
+  reviewIndex += 1;
+  // At the end, ask again: a card graded Again may be due again by now.
+  if (reviewIndex >= reviewCards.length) {
+    loadReviews().catch((error) => { $("review-status").textContent = String(error); });
+  } else {
+    showReview();
+  }
+}
+
+$("review-article").addEventListener("submit", (event) => { event.preventDefault(); showMeaning(); });
+$("review-show").addEventListener("click", showMeaning);
+$("review-next").addEventListener("click", nextReview);
+for (const button of document.querySelectorAll("#review-grades button")) {
+  button.addEventListener("click", () => gradeReview(button.dataset.rating));
+}
+document.addEventListener("keydown", (event) => {
+  if ($("review").hidden || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (event.target === $("review-article-input")) return;
+  const rating = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" }[event.key];
+  if (rating) gradeReview(rating);
+  else if (event.key === " " && !$("review-show").hidden) { event.preventDefault(); showMeaning(); }
+});
+
 $("check-tab").addEventListener("click", () => showTab("check"));
 $("lesson-tab").addEventListener("click", () => showTab("lesson"));
+$("review-tab").addEventListener("click", () => showTab("review"));
 if (location.hash === "#lesson") showTab("lesson");
+if (location.hash === "#review") showTab("review");
 </script>
 </body>
 </html>

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from core import VocabStore, WordState
+from core import EpisodeLine, VocabStore, WordState
 from web.launch import PageError, PageServer
 
 MEDIA = Path(__file__).parent / "fixtures"
@@ -230,3 +230,40 @@ def test_the_page_checks_an_answer_and_finishes_the_lesson(tmp_path, page, port)
     with pytest.raises(urllib.error.HTTPError) as again:
         post_json(base + "/finish")
     assert again.value.code == 400
+
+
+def test_the_review_tab_gets_the_due_cards_and_grades_one(tmp_path, page, port):
+    with closing(VocabStore(tmp_path / "vocab.sqlite")) as store:
+        store.add("Höhle", "NOUN", WordState.UNKNOWN)
+        store.keep_lesson_word(
+            "Höhle",
+            EpisodeLine("Dark/S01E01", 1, "Sie sind in der Höhle.", "Höhle"),
+            "cave",
+            "feminine",
+        )
+        store.teach("Höhle", "Dark/S01E01")
+    page.open("Dark/S01E01")
+    base = f"http://127.0.0.1:{port}/api/reviews"
+
+    assert get_json(base) == [
+        {
+            "base_form": "Höhle",
+            "word_type": "NOUN",
+            "seen_form": "Höhle",
+            "context": "Sie sind in der **Höhle**.",
+            "first_review": True,
+            "meaning": "cave",
+            "needs_article": True,
+        }
+    ]
+    graded = post_json(base, {"base_form": "Höhle", "rating": "Good", "article": "das"})
+    assert graded["rating"] == "Good"
+    assert graded["article"] == {
+        "right": False,
+        "correction": "die Höhle",
+        "reason": "Höhle is feminine: die Höhle.",
+    }
+    assert get_json(base) == []  # Due again in 10 minutes.
+    with pytest.raises(urllib.error.HTTPError) as rejected:
+        post_json(base, {"base_form": "Höhle", "rating": "Good", "article": "die"})
+    assert rejected.value.code == 400

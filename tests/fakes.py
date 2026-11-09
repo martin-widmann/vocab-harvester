@@ -47,3 +47,18 @@ class FakeGraderRunner:
     def run(self, prompt: str) -> str:
         self.prompts.append(prompt)
         return self.replies.pop(0)
+
+
+class FakeDateClock:
+    """The date and time the review scheduler sees; tests move it on."""
+
+    def __init__(self, now):
+        self.time = now
+
+    def now(self):
+        return self.time
+
+    def advance(self, **delta):
+        from datetime import timedelta
+
+        self.time += timedelta(**delta)
