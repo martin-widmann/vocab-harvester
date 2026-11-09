@@ -2,7 +2,7 @@
 
 import sqlite3
 from contextlib import closing
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -15,6 +15,7 @@ from core import (
     FoundTopic,
     FrequencyTable,
     GrammarPart,
+    LessonExercise,
     LessonFiles,
     LessonInfo,
     SentenceChecker,
@@ -24,6 +25,7 @@ from core import (
     WordFacts,
     add_sentences,
     build_frequency_table,
+    check_answer,
     import_word_facts,
     new_words,
     read_lines,
@@ -167,6 +169,13 @@ DATIV = GrammarPart(
     line=2,
     rule="Some verbs, such as helfen, danken and folgen, take a dative object.",
     cases=["Ich danke dir.", "Wir folgen dem Weg."],
+    exercises=[
+        LessonExercise("gap", "Ich helfe ___ Kind.", "dem", [], "helfen takes the dative."),
+        LessonExercise(
+            "choice", "Wir danken ___ Lehrerin.", "der", ["der", "die", "den"],
+            "danken takes the dative.",
+        ),
+    ],
 )
 PASSIV = GrammarPart(
     topic_id="passiv-modalverb",
@@ -174,6 +183,16 @@ PASSIV = GrammarPart(
     line=None,
     rule="Modal verb + past participle + werden at the end of the clause.",
     cases=["Die Arbeit kann morgen gemacht werden.", "Das darf nicht vergessen werden."],
+    exercises=[
+        LessonExercise(
+            "gap", "Der Brief muss heute ___ werden.", "geschrieben", [],
+            "Modal verb + participle + werden.",
+        ),
+        LessonExercise(
+            "choice", "Das Auto kann morgen ___ werden.", "repariert",
+            ["repariert", "reparieren"], "The participle comes before werden.",
+        ),
+    ],
 )
 
 
@@ -255,6 +274,24 @@ def test_each_grammar_topic_goes_in_the_section_of_its_line_example_first_then_t
                 "lines": [2],
                 "rule": DATIV.rule,
                 "cases": DATIV.cases,
+                "exercises": [
+                    {
+                        "id": "dativ:1",
+                        "kind": "gap",
+                        "sentence": "Ich helfe ___ Kind.",
+                        "answer": "dem",
+                        "options": [],
+                        "explanation": "helfen takes the dative.",
+                    },
+                    {
+                        "id": "dativ:2",
+                        "kind": "choice",
+                        "sentence": "Wir danken ___ Lehrerin.",
+                        "answer": "der",
+                        "options": ["der", "die", "den"],
+                        "explanation": "danken takes the dative.",
+                    },
+                ],
             }
         ],
         [
@@ -267,6 +304,10 @@ def test_each_grammar_topic_goes_in_the_section_of_its_line_example_first_then_t
                 "lines": [4],
                 "rule": PASSIV.rule,
                 "cases": PASSIV.cases,
+                "exercises": [
+                    {"id": "passiv-modalverb:1", **asdict(PASSIV.exercises[0])},
+                    {"id": "passiv-modalverb:2", **asdict(PASSIV.exercises[1])},
+                ],
             }
         ],
     ]
@@ -322,11 +363,37 @@ def test_an_unreadable_lesson_file_is_left_out_of_the_list(write, lessons, tmp_p
         ([DATIV, replace(PASSIV, cases=["Das kann gemacht werden.", ""])], "case 2 is empty"),
         ([replace(DATIV, line=3), PASSIV], "Line 3 is not a Line"),
         ([replace(DATIV, line=99), PASSIV], "Line 99 is not a Line"),
+        ([DATIV, replace(PASSIV, exercises=PASSIV.exercises[:1])], "2 to 4 exercises"),
+        ([DATIV, replace(PASSIV, exercises=PASSIV.exercises * 3)], "2 to 4 exercises"),
+        (
+            [DATIV, replace(PASSIV, exercises=[
+                PASSIV.exercises[0], replace(PASSIV.exercises[1], answer="gemacht"),
+            ])],
+            "answer must be one of the options",
+        ),
+        (
+            [DATIV, replace(PASSIV, exercises=[
+                PASSIV.exercises[0], replace(PASSIV.exercises[1], sentence="Kein Loch."),
+            ])],
+            "exactly one gap",
+        ),
+        (
+            [DATIV, replace(PASSIV, exercises=[
+                PASSIV.exercises[0], replace(PASSIV.exercises[1], kind="article"),
+            ])],
+            "kind must be one of gap, choice",
+        ),
+        (
+            [DATIV, replace(PASSIV, exercises=[PASSIV.exercises[0]] * 2)],
+            "twice",
+        ),
     ],
     ids=[
         "topic not picked", "topic missing", "topic twice", "empty example",
         "two-line example", "long example", "empty rule", "one case",
         "empty case", "line without the topic", "line not in episode",
+        "one exercise", "six exercises", "answer not an option", "no gap",
+        "article kind", "exercise twice",
     ],
 )
 def test_write_lesson_rejects_a_lesson_that_does_not_match_the_schema(
@@ -353,10 +420,23 @@ def test_write_lesson_rejects_a_lesson_that_does_not_match_the_schema(
             [DATIV, replace(PASSIV, cases=["Er gab nicht auf!", "Das darf nicht sein."])],
             "is a Line of the Episode",
         ),
+        (
+            [replace(DATIV, exercises=[
+                DATIV.exercises[0], replace(DATIV.exercises[1], sentence="Wir danken ___ Martha."),
+            ]), PASSIV],
+            "Martha",
+        ),
+        (
+            [DATIV, replace(PASSIV, exercises=[
+                PASSIV.exercises[0], replace(PASSIV.exercises[1], sentence="Er ___ nicht auf.", answer="gab", options=["gab", "gibt"]),
+            ])],
+            "is a Line of the Episode",
+        ),
     ],
     ids=[
         "line not cut", "name in example", "name in a case", "name in the rule",
-        "neutral example is a line", "case is a line",
+        "neutral example is a line", "case is a line", "name in an exercise",
+        "exercise is a line",
     ],
 )
 def test_an_episode_line_used_for_grammar_must_be_cut_with_its_names_changed(
@@ -374,6 +454,17 @@ def test_the_grammar_sentences_are_checked_by_languagetool(write, lessons, langu
 
     assert lessons.lessons() == []
     assert "Das Fenster muss repariert werden." in language_tool.texts[-1]
+
+
+def test_the_grammar_exercises_are_checked_by_languagetool_with_the_answer_in_the_gap(
+    write, lessons, language_tool
+):
+    wrong = replace(PASSIV.exercises[0], sentence="Das ist ___ gemacht.", answer="falsch")
+    with pytest.raises(ValueError, match="Fehler: falsch"):
+        write(grammar=[DATIV, replace(PASSIV, exercises=[wrong, PASSIV.exercises[1]])])
+
+    assert lessons.lessons() == []
+    assert "Ich helfe dem Kind." in language_tool.texts[-1]
 
 
 def test_the_grammar_topics_must_be_reported_first(write, lessons):
@@ -481,3 +572,31 @@ def test_a_new_write_keeps_the_words_of_the_lesson_after_they_are_taught(write, 
 def test_a_name_with_a_genitive_ending_is_a_name(write, name):
     with pytest.raises(ValueError, match="names from the Episode"):
         write(grammar=[replace(DATIV, example=f"{name} Bruder hilft ihm."), PASSIV])
+
+
+def test_each_noun_with_a_gender_gets_a_der_die_das_exercise(write):
+    lesson = write()
+
+    (suchen, hoehle) = lesson["sections"][0]["words"]
+    assert hoehle["exercises"] == [
+        {
+            "id": "Höhle:article",
+            "kind": "article",
+            "sentence": "___ Höhle",
+            "answer": "die",
+            "options": ["der", "die", "das"],
+            "explanation": "Höhle is feminine: die Höhle.",
+        }
+    ]
+    assert suchen["exercises"] == []
+
+
+def test_a_lesson_with_answers_is_not_replaced(write, lessons):
+    write()
+    check_answer(lessons, 1, "Höhle:article", "die")
+
+    with pytest.raises(ValueError, match="already has answers"):
+        write(grammar=[PASSIV, replace(DATIV, rule="Helfen takes the dative.")])
+
+    assert lessons.read(1)["sections"][1]["grammar"][0]["rule"] != "Helfen takes the dative."
+    assert lessons.results(1)["answers"]["Höhle:article"]["right"] is True

@@ -29,8 +29,9 @@ from core.grammar_topics import (
     add_exercises,
     report_topics,
 )
-from core.lesson import GrammarPart, LessonFiles, LessonInfo, write_lesson
+from core.lesson import GrammarPart, LessonExercise, LessonFiles, LessonInfo, write_lesson
 from core.lesson_words import LessonWord, pick_lesson_words
+from core.results import Finished, Result, TopicResult, check_answer, finish_lesson, lesson_for_page
 from core.sentences import (
     Issue,
     LanguageToolBusy,
@@ -56,11 +57,13 @@ __all__ = [
     "ExerciseStatus",
     "ExerciseStock",
     "Facts",
+    "Finished",
     "FoundTopic",
     "FrequencyTable",
     "GrammarPart",
     "Issue",
     "LanguageToolBusy",
+    "LessonExercise",
     "LessonFiles",
     "LessonGrammar",
     "LessonInfo",
@@ -71,6 +74,7 @@ __all__ = [
     "PickedTopic",
     "Proposal",
     "Refill",
+    "Result",
     "SentenceChecker",
     "SentenceResult",
     "SentenceStatus",
@@ -78,6 +82,7 @@ __all__ = [
     "StoredExercise",
     "SubtitleError",
     "Topic",
+    "TopicResult",
     "TopicState",
     "TopicStatus",
     "VocabStore",
@@ -88,12 +93,15 @@ __all__ = [
     "add_sentences",
     "analyse",
     "build_frequency_table",
+    "check_answer",
     "curriculum_gaps",
     "episode_key",
     "extract_subtitles",
     "failed_sentences",
     "find_episode",
+    "finish_lesson",
     "import_word_facts",
+    "lesson_for_page",
     "new_words",
     "pick_lesson_words",
     "read_lines",

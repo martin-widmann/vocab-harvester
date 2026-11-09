@@ -420,7 +420,7 @@ def _checked_exercises(
                 f"{topic_id!r} failed all its tries; it takes exercises again "
                 "at the next lesson build"
             )
-        _check_exercise(name, exercise)
+        check_exercise(name, exercise)
         key = (topic_id, exercise.solved)
         if key in seen or exercise.solved in stock._solved_sentences(topic_id):
             raise ValueError(f"{name} is already in the stock or in this call")
@@ -448,7 +448,8 @@ def _cleaned(exercise: Exercise) -> Exercise:
     )
 
 
-def _check_exercise(name: str, exercise: Exercise) -> None:
+def check_exercise(name: str, exercise: Exercise) -> None:
+    """Reject a malformed exercise: wrong kind, no single gap, bad options."""
     kinds = [kind.value for kind in ExerciseKind]
     if exercise.kind not in kinds:
         raise ValueError(f"{name}: the kind must be one of {', '.join(kinds)}")
