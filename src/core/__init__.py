@@ -15,6 +15,20 @@ from core.curriculum import (
 )
 from core.episode import NewWord, find_episode, new_words, subtitle_file
 from core.frequency import FrequencyTable, build_frequency_table
+from core.grammar_topics import (
+    Exercise,
+    ExerciseKind,
+    ExerciseResult,
+    ExerciseStatus,
+    ExerciseStock,
+    FoundTopic,
+    LessonGrammar,
+    PickedTopic,
+    Refill,
+    StoredExercise,
+    add_exercises,
+    report_topics,
+)
 from core.lesson_words import LessonWord, pick_lesson_words
 from core.sentences import (
     Issue,
@@ -35,19 +49,29 @@ from core.word_facts import Facts, WordFacts, import_word_facts
 __all__ = [
     "CHECK_KEYS",
     "Curriculum",
+    "Exercise",
+    "ExerciseKind",
+    "ExerciseResult",
+    "ExerciseStatus",
+    "ExerciseStock",
     "Facts",
+    "FoundTopic",
     "FrequencyTable",
     "Issue",
     "LanguageToolBusy",
+    "LessonGrammar",
     "LessonTopics",
     "LessonWord",
     "Line",
     "NewWord",
+    "PickedTopic",
     "Proposal",
+    "Refill",
     "SentenceChecker",
     "SentenceResult",
     "SentenceStatus",
     "SentenceToStore",
+    "StoredExercise",
     "SubtitleError",
     "Topic",
     "TopicState",
@@ -56,6 +80,7 @@ __all__ = [
     "Word",
     "WordFacts",
     "WordState",
+    "add_exercises",
     "add_sentences",
     "analyse",
     "build_frequency_table",
@@ -68,5 +93,6 @@ __all__ = [
     "pick_lesson_words",
     "read_lines",
     "record_answer",
+    "report_topics",
     "subtitle_file",
 ]

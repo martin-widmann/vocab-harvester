@@ -8,6 +8,9 @@ from typing import Protocol
 
 from core import (
     Curriculum,
+    Exercise,
+    ExerciseStock,
+    FoundTopic,
     FrequencyTable,
     Line,
     SentenceChecker,
@@ -16,6 +19,7 @@ from core import (
     TopicStatus,
     VocabStore,
     WordFacts,
+    add_exercises,
     add_sentences,
     analyse,
     curriculum_gaps,
@@ -24,6 +28,7 @@ from core import (
     new_words,
     pick_lesson_words,
     read_lines,
+    report_topics,
     subtitle_file,
 )
 from core.frequency import DEFAULT_FREQUENCY
@@ -66,6 +71,30 @@ _TOPIC = {
         "level": {"type": "string"},
     },
     "required": ["id", "name", "level"],
+    "additionalProperties": False,
+}
+
+_FOUND_TOPIC = {
+    "type": "object",
+    "properties": {
+        "topic_id": {"type": "string"},
+        "lines": {"type": "array", "items": {"type": "integer"}},
+    },
+    "required": ["topic_id", "lines"],
+    "additionalProperties": False,
+}
+
+_EXERCISE = {
+    "type": "object",
+    "properties": {
+        "topic_id": {"type": "string"},
+        "kind": {"type": "string", "enum": ["gap", "choice"]},
+        "sentence": {"type": "string"},
+        "answer": {"type": "string"},
+        "options": {"type": "array", "items": {"type": "string"}},
+        "explanation": {"type": "string"},
+    },
+    "required": ["topic_id", "kind", "sentence", "answer", "options", "explanation"],
     "additionalProperties": False,
 }
 
@@ -315,6 +344,60 @@ class Toolbox:
                     self._curriculum_gaps,
                 ),
                 Tool(
+                    "report_topics",
+                    "Start the grammar part of a lesson build: report the "
+                    "Grammar topics found in an Episode's Lines, each with the "
+                    "numbers of the Lines it occurs in. A new report for the "
+                    "Episode replaces the old one. The result gives the 2 "
+                    "topics the Lesson teaches, each with its Lines: new (the "
+                    "first Not seen topic in Curriculum order) and weak (the "
+                    "Weak point that has been weak the longest); either is "
+                    "null when the Episode has none. not_in_curriculum names "
+                    "found topic ids the Curriculum does not have. refill "
+                    "names the topics whose exercise stock needs exercises "
+                    "now (the picked ones and every topic whose stock is low) "
+                    "and how many each needs; only these topics take "
+                    "exercises until the next lesson build.",
+                    {
+                        "episode": _EPISODE,
+                        "topics": {
+                            "type": "array",
+                            "items": _FOUND_TOPIC,
+                            "description": 'For example [{"topic_id": "dativ", '
+                            '"lines": [12, 40]}]. Use the Curriculum topic ids.',
+                        },
+                    },
+                    self._report_topics,
+                ),
+                Tool(
+                    "add_exercises",
+                    "Store grammar exercises in the exercise stock, for the "
+                    "topics in the refill of the latest report_topics call, "
+                    "up to 5 unused exercises per topic. An exercise is one "
+                    'German sentence with one gap "___", the answer for the '
+                    'gap, and a short English explanation. kind "gap": the '
+                    'learner types the answer, options is []. kind "choice": '
+                    "2 to 4 options, the answer one of them. LanguageTool "
+                    "checks each sentence with the answer in the gap; only an "
+                    "exercise with no problems is stored. Each result has a "
+                    'status: "stored"; "retry" (it failed: write a new '
+                    "exercise for the topic; retries_left is the failed tries "
+                    'the topic has left in this lesson build); or "stopped" '
+                    "(the topic failed all its tries: send no more exercises "
+                    "for it until the next lesson build).",
+                    {
+                        "exercises": {
+                            "type": "array",
+                            "items": _EXERCISE,
+                            "description": 'For example [{"topic_id": "dativ", '
+                            '"kind": "choice", "sentence": "Ich helfe ___ Mann.", '
+                            '"answer": "dem", "options": ["dem", "den", "der"], '
+                            '"explanation": "helfen takes the dative."}].',
+                        }
+                    },
+                    self._add_exercises,
+                ),
+                Tool(
                     "open_page",
                     "Start the web server if it is not running and open the "
                     "exercise page of an Episode in the browser, on its Check tab.",
@@ -413,6 +496,33 @@ class Toolbox:
     def _curriculum_gaps(self, found_topics: list[str]) -> dict:
         with closing(Curriculum(self._db_path)) as curriculum:
             return asdict(curriculum_gaps(curriculum, found_topics))
+
+    def _report_topics(self, episode: str, topics: list[dict]) -> dict:
+        folder = self._episode(episode)
+        # One key per Episode, however its name was written.
+        key = folder.relative_to(self._media_root.resolve()).as_posix()
+        lines = read_lines(subtitle_file(folder))
+        with (
+            closing(Curriculum(self._db_path)) as curriculum,
+            closing(ExerciseStock(self._db_path)) as stock,
+        ):
+            grammar = report_topics(
+                curriculum, stock, key, lines, [FoundTopic(**topic) for topic in topics]
+            )
+        return asdict(grammar)
+
+    def _add_exercises(self, exercises: list[dict]) -> list[dict]:
+        with (
+            closing(Curriculum(self._db_path)) as curriculum,
+            closing(ExerciseStock(self._db_path)) as stock,
+        ):
+            results = add_exercises(
+                curriculum,
+                stock,
+                self._checker,
+                [Exercise(**exercise) for exercise in exercises],
+            )
+        return [asdict(result) for result in results]
 
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}
