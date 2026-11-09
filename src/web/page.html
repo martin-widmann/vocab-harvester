@@ -63,6 +63,10 @@
   #review-grades { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
   #review-grades kbd { margin-right: 4px; color: var(--muted); }
   #review-meaning { font-size: 1.2rem; margin-top: 16px; }
+  #grammar-review { border-top: 1px solid var(--line); margin-top: 32px; padding-top: 16px; }
+  #grammar-topic { font-size: 1.2rem; font-weight: 600; }
+  #grammar-sentence { font-size: 1.3rem; margin: 16px 0; }
+  #grammar-form { justify-content: center; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -115,6 +119,17 @@
     </div>
   </section>
   <p id="review-error" class="wrong" role="alert"></p>
+  <section id="grammar-review" aria-label="Grammar review">
+    <p id="grammar-status" class="muted">Reading the due grammar exercises…</p>
+    <div id="grammar-card" class="exercise" hidden>
+      <div id="grammar-topic"></div>
+      <p id="grammar-sentence"></p>
+      <form id="grammar-form"></form>
+      <p id="grammar-result" aria-live="polite"></p>
+      <button id="grammar-next" type="button" hidden>Next exercise</button>
+    </div>
+    <p id="grammar-error" class="wrong" role="alert"></p>
+  </section>
 </main>
 <script>
 const episode = new URLSearchParams(location.search).get("episode") || "";
@@ -199,6 +214,7 @@ function showTab(name) {
   history.replaceState(null, "", location.pathname + location.search + (name === "check" ? "" : "#" + name));
   if (name === "review") {
     loadReviews().catch((error) => { $("review-status").textContent = String(error); });
+    loadGrammar().catch((error) => { $("grammar-status").textContent = String(error); });
   }
   if (name === "lesson") {
     // Read the list again each time: a Lesson may be written while the page is open.
@@ -581,11 +597,114 @@ for (const button of document.querySelectorAll("#review-grades button")) {
 }
 document.addEventListener("keydown", (event) => {
   if ($("review").hidden || event.ctrlKey || event.metaKey || event.altKey) return;
-  if (event.target === $("review-article-input")) return;
+  // Typing in an answer field is not a grade of the vocab card.
+  if (event.target.closest("input, textarea, #grammar-review")) return;
   const rating = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" }[event.key];
   if (rating) gradeReview(rating);
   else if (event.key === " " && !$("review-show").hidden) { event.preventDefault(); showMeaning(); }
 });
+
+// The grammar part of the Review tab: one due grammar exercise at a time,
+// each a new one from the exercise stock. The server checks the answer and
+// moves the Topic state.
+let grammarCards = [], grammarIndex = 0, grammarBusy = false, grammarDone = 0;
+
+async function loadGrammar() {
+  const response = await fetch("/api/grammar-reviews");
+  if (!response.ok) { $("grammar-status").textContent = await errorText(response); return; }
+  grammarCards = await response.json();
+  grammarIndex = 0;
+  showGrammar();
+}
+
+function showGrammar() {
+  const card = grammarCards[grammarIndex];
+  $("grammar-card").hidden = !card;
+  $("grammar-error").textContent = "";
+  if (!card) {
+    $("grammar-status").textContent = grammarDone
+      ? `${grammarDone} grammar exercises done. No more are due today.`
+      : "No grammar exercises are due today.";
+    return;
+  }
+  $("grammar-status").textContent = `Grammar exercise ${grammarIndex + 1} of ${grammarCards.length}`;
+  $("grammar-topic").textContent = card.weak ? `${card.topic_name} (Weak point)` : card.topic_name;
+  $("grammar-sentence").textContent = card.sentence;
+  $("grammar-result").replaceChildren();
+  $("grammar-next").hidden = true;
+  const form = $("grammar-form");
+  form.replaceChildren();
+  if (card.kind === "choice") {
+    for (const option of card.options) {
+      const button = element("button", option);
+      button.type = "button";
+      button.addEventListener("click", () => answerGrammar(option));
+      form.append(button);
+    }
+  } else {
+    const input = element("input");
+    input.setAttribute("aria-label", "Your answer");
+    input.placeholder = "Your answer";
+    input.autocomplete = "off";
+    form.append(input, element("button", "Check"));
+  }
+}
+
+async function answerGrammar(answer) {
+  const card = grammarCards[grammarIndex];
+  if (grammarBusy || !card || !answer.trim()) return;
+  grammarBusy = true;
+  const form = $("grammar-form");
+  for (const control of form.elements) control.disabled = true;
+  try {
+    const response = await fetch("/api/grammar-reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exercise_id: card.exercise_id, answer }),
+    });
+    if (!response.ok) {
+      $("grammar-error").textContent = await errorText(response);
+      if (response.status === 400) {
+        // For example the exercise is no longer due: go on to the next one.
+        $("grammar-next").hidden = false;
+      } else {
+        for (const control of form.elements) control.disabled = false;
+      }
+      return;
+    }
+    const graded = await response.json();
+    grammarDone += 1;
+    const result = graded.result;
+    $("grammar-result").replaceChildren(
+      element("span", result.right ? "Right. " : "Wrong. ", result.right ? "right" : "wrong"),
+      element("span", `${result.correction} · ${result.reason}`),
+      element("div", `${card.topic_name}: ${graded.state}${graded.weak ? ", Weak point" : ""}`, "muted"),
+    );
+    $("grammar-next").hidden = false;
+    $("grammar-next").focus();
+  } catch (error) {
+    $("grammar-error").textContent = `The answer was not saved: ${error}`;
+    for (const control of form.elements) control.disabled = false;
+  } finally {
+    grammarBusy = false;
+  }
+}
+
+function nextGrammar() {
+  grammarIndex += 1;
+  if (grammarIndex >= grammarCards.length) {
+    loadGrammar().catch((error) => { $("grammar-status").textContent = String(error); });
+  } else {
+    showGrammar();
+  }
+}
+
+$("grammar-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = $("grammar-form").querySelector("input");
+  if (input) answerGrammar(input.value);
+});
+$("grammar-next").addEventListener("click", nextGrammar);
 
 $("check-tab").addEventListener("click", () => showTab("check"));
 $("lesson-tab").addEventListener("click", () => showTab("lesson"));
