@@ -274,8 +274,10 @@ class Toolbox:
                 Tool(
                     "propose_curriculum",
                     "Propose a full Curriculum: the first draft or a change. It "
-                    "is NOT stored as the Curriculum; it waits for the learner's "
-                    "approval, and replaces an older open proposal. Send every "
+                    "is NOT stored as the Curriculum; it waits until the learner "
+                    "approves it on the command line with "
+                    "`python -m core approve-curriculum <number>`. It replaces "
+                    "an older open proposal. Send every "
                     "topic, in teaching order, with an id (lowercase, hyphens, "
                     'for example "konjunktiv-2"), the name a Tag shows (for '
                     'example "Konjunktiv II") and its level (A1, A2, B1, B2, C1 '
@@ -292,19 +294,6 @@ class Toolbox:
                         }
                     },
                     self._propose_curriculum,
-                ),
-                Tool(
-                    "approve_curriculum",
-                    "Store the open proposal as the Curriculum. Call it ONLY "
-                    "after you showed the learner this proposal and the learner "
-                    "said yes to it in the chat. Never call it on your own.",
-                    {
-                        "proposal": {
-                            "type": "integer",
-                            "description": "The number of the proposal the learner approved.",
-                        }
-                    },
-                    self._approve_curriculum,
                 ),
                 Tool(
                     "curriculum_gaps",
@@ -420,10 +409,6 @@ class Toolbox:
     def _propose_curriculum(self, topics: list[dict]) -> dict:
         with closing(Curriculum(self._db_path)) as curriculum:
             return asdict(curriculum.propose([Topic(**topic) for topic in topics]))
-
-    def _approve_curriculum(self, proposal: int) -> list[dict]:
-        with closing(Curriculum(self._db_path)) as curriculum:
-            return [_topic_status(status) for status in curriculum.approve(proposal)]
 
     def _curriculum_gaps(self, found_topics: list[str]) -> dict:
         with closing(Curriculum(self._db_path)) as curriculum:

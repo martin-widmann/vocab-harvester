@@ -356,27 +356,38 @@ TOPICS = [
 ]
 
 
-def test_curriculum_is_stored_only_after_the_approve_tool_names_its_proposal(toolbox):
+def approve(db, number):
+    """The learner approves on the command line; no tool can approve."""
+    with closing(Curriculum(db)) as curriculum:
+        curriculum.approve(number)
+
+
+def test_no_tool_can_store_the_curriculum_without_the_learner():
+    assert not [name for name in Toolbox(".", "unused.sqlite", page=None).tools
+                if "approve" in name]
+
+
+def test_curriculum_tool_shows_the_proposal_and_later_the_approved_curriculum(
+    toolbox, db
+):
     proposal = toolbox.call("propose_curriculum", {"topics": TOPICS})
 
     assert proposal["added"] == ["dativ", "konjunktiv-1", "partizipialattribut"]
     assert toolbox.call("curriculum", {}) == {"topics": [], "proposal": proposal}
 
-    topics = toolbox.call("approve_curriculum", {"proposal": proposal["number"]})
+    approve(db, proposal["number"])
 
-    assert topics == [
-        {"id": "dativ", "name": "Dativ", "level": "A2", "state": "Solid", "weak": False},
-        {"id": "konjunktiv-1", "name": "Konjunktiv I", "level": "B2",
-         "state": "Not seen", "weak": False},
-        {"id": "partizipialattribut", "name": "Partizipialattribut", "level": "C1",
-         "state": "Not seen", "weak": False},
-    ]
-    assert toolbox.call("curriculum", {}) == {"topics": topics, "proposal": None}
-
-
-def test_approving_a_proposal_that_is_not_open_is_a_tool_error(toolbox):
-    with pytest.raises(ToolError, match="No open proposal"):
-        toolbox.call("approve_curriculum", {"proposal": 1})
+    assert toolbox.call("curriculum", {}) == {
+        "topics": [
+            {"id": "dativ", "name": "Dativ", "level": "A2", "state": "Solid",
+             "weak": False},
+            {"id": "konjunktiv-1", "name": "Konjunktiv I", "level": "B2",
+             "state": "Not seen", "weak": False},
+            {"id": "partizipialattribut", "name": "Partizipialattribut",
+             "level": "C1", "state": "Not seen", "weak": False},
+        ],
+        "proposal": None,
+    }
 
 
 def test_a_malformed_curriculum_proposal_is_a_tool_error(toolbox):
@@ -388,8 +399,7 @@ def test_a_malformed_curriculum_proposal_is_a_tool_error(toolbox):
 
 
 def test_curriculum_gaps_tool_gives_one_new_and_one_weak_topic(toolbox, db):
-    proposal = toolbox.call("propose_curriculum", {"topics": TOPICS})
-    toolbox.call("approve_curriculum", {"proposal": proposal["number"]})
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
     with closing(Curriculum(db)) as curriculum:
         curriculum.review("dativ", passed=False)
 

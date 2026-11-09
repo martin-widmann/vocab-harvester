@@ -2,7 +2,8 @@
 the learner is with each one.
 
 An agent drafts the Curriculum and can propose changes. A proposal is only
-stored as the Curriculum when the learner approves it.
+stored as the Curriculum when the learner approves it, on the command line:
+no MCP tool can approve.
 """
 
 import json
@@ -52,12 +53,8 @@ class Proposal:
     removed: list[str]
 
 
-REVIEWS_TO_SOLID = 3
-LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
-_TOPIC_ID = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-
 @dataclass(frozen=True)
-class Gaps:
+class LessonTopics:
     """The 2 Grammar topics a Lesson can teach, from the topics found in its Episode.
 
     `new` is the next new topic, `weak` a Weak point; either is None when the
@@ -70,15 +67,18 @@ class Gaps:
     not_in_curriculum: list[str]
 
 
+REVIEWS_TO_SOLID = 3
+LEVELS = ("A1", "A2", "B1", "B2", "C1", "C2")
 # The learner is B2, so the topics up to B1 start as Solid.
 SOLID_LEVELS = ("A1", "A2", "B1")
+_TOPIC_ID = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
 
 def _start_state(topic: Topic) -> TopicState:
     return TopicState.SOLID if topic.level in SOLID_LEVELS else TopicState.NOT_SEEN
 
 
-def _check(topics: list[Topic]) -> None:
+def _reject_malformed(topics: list[Topic]) -> None:
     """Reject a malformed Curriculum before it is kept."""
     if not topics:
         raise ValueError("A Curriculum needs Grammar topics; this one has no Grammar topics")
@@ -90,7 +90,7 @@ def _check(topics: list[Topic]) -> None:
                 'with single hyphens, for example "konjunktiv-2"'
             )
         if topic.id in seen:
-            raise ValueError(f"Topic id {topic.id!r} is in the Curriculum twice")
+            raise ValueError(f"Topic id {topic.id!r} is in the proposal twice")
         seen.add(topic.id)
         if not topic.name.strip():
             raise ValueError(f"Topic {topic.id!r} needs a name")
@@ -135,7 +135,7 @@ class Curriculum:
 
     def propose(self, topics: list[Topic]) -> Proposal:
         """Keep a full Curriculum as the proposal; it replaces an older proposal."""
-        _check(topics)
+        _reject_malformed(topics)
         with self._db:
             self._db.execute("DELETE FROM curriculum_proposal")
             self._db.execute(
@@ -165,8 +165,9 @@ class Curriculum:
         """Store the proposal with this number as the Curriculum.
 
         A topic it keeps keeps its Topic state, also when its name or level
-        changed. A topic it adds starts as Solid up to B1, else as Not seen.
-        A topic it removes loses its Topic state.
+        changed; only a Not seen topic moved to B1 or lower starts as Solid,
+        like a new one. A topic it adds starts as Solid up to B1, else as Not
+        seen. A topic it removes loses its Topic state.
         """
         proposal = self.proposal()
         if proposal is None:
@@ -186,8 +187,16 @@ class Curriculum:
                     "INSERT INTO curriculum_topics "
                     "(topic_id, position, name, level, state) VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT (topic_id) DO UPDATE SET position = excluded.position, "
-                    "name = excluded.name, level = excluded.level",
-                    (topic.id, position, topic.name, topic.level, _start_state(topic).value),
+                    "name = excluded.name, level = excluded.level, "
+                    "state = CASE WHEN state = ? THEN excluded.state ELSE state END",
+                    (
+                        topic.id,
+                        position,
+                        topic.name,
+                        topic.level,
+                        _start_state(topic).value,
+                        TopicState.NOT_SEEN.value,
+                    ),
                 )
             self._db.execute("DELETE FROM curriculum_proposal")
         return self.topics()
@@ -216,7 +225,12 @@ class Curriculum:
         self._move(topic_id, TopicState.NOT_SEEN, TopicState.SEEN)
 
     def lesson_exercises_passed(self, topic_id: str) -> None:
-        """The learner passed the topic's Lesson exercises: Seen becomes Learned."""
+        """The learner passed the topic's Lesson exercises: Seen becomes Learned.
+
+        A Learned or Solid topic (a Weak point a Lesson taught again) stays.
+        """
+        if self._state_of(topic_id) == TopicState.NOT_SEEN:
+            raise ValueError(f"{topic_id!r} is Not seen: no Lesson taught it")
         self._move(topic_id, TopicState.SEEN, TopicState.LEARNED)
 
     def review(self, topic_id: str, passed: bool) -> None:
@@ -253,7 +267,7 @@ class Curriculum:
 
     def _move(self, topic_id: str, before: TopicState, after: TopicState) -> None:
         """Set the topic to `after` if it is `before`; a topic further on stays."""
-        self._state_of(topic_id)
+        self._state_of(topic_id)  # Only to reject a topic not in the Curriculum.
         with self._db:
             self._db.execute(
                 "UPDATE curriculum_topics SET state = ? WHERE topic_id = ? AND state = ?",
@@ -269,7 +283,7 @@ class Curriculum:
         return TopicState(row[0])
 
 
-def curriculum_gaps(curriculum: Curriculum, found: list[str]) -> Gaps:
+def curriculum_gaps(curriculum: Curriculum, found: list[str]) -> LessonTopics:
     """Pick the Grammar topics for a Lesson from the topics found in its Episode.
 
     The new topic is the first Not seen topic in Curriculum order. The weak
@@ -297,4 +311,4 @@ def curriculum_gaps(curriculum: Curriculum, found: list[str]) -> Gaps:
     not_in_curriculum = [
         topic_id for topic_id in dict.fromkeys(found) if topic_id not in in_curriculum
     ]
-    return Gaps(new, weak, not_in_curriculum)
+    return LessonTopics(new, weak, not_in_curriculum)

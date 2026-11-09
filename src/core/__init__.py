@@ -6,7 +6,7 @@ web server are thin adapters over it.
 
 from core.curriculum import (
     Curriculum,
-    Gaps,
+    LessonTopics,
     Proposal,
     Topic,
     TopicState,
@@ -36,10 +36,10 @@ __all__ = [
     "CHECK_KEYS",
     "Curriculum",
     "Facts",
-    "Gaps",
     "FrequencyTable",
     "Issue",
     "LanguageToolBusy",
+    "LessonTopics",
     "LessonWord",
     "Line",
     "NewWord",

@@ -1,5 +1,7 @@
 """Curriculum and Topic state: the ordered map of Grammar topics and how far the learner is."""
 
+from contextlib import closing
+
 import pytest
 
 from core import Curriculum, Topic, TopicState, VocabStore, WordState, curriculum_gaps
@@ -16,7 +18,9 @@ DRAFT = [
 
 @pytest.fixture
 def curriculum(tmp_path):
-    return Curriculum(tmp_path / "vocab.sqlite")
+    curriculum = Curriculum(tmp_path / "vocab.sqlite")
+    yield curriculum
+    curriculum.close()
 
 
 def approved(curriculum, topics=DRAFT):
@@ -153,10 +157,23 @@ def test_teaching_a_topic_again_does_not_set_it_back(curriculum):
     assert status_of(curriculum, "dativ").state == TopicState.SOLID
 
 
-def test_lesson_exercises_of_a_topic_no_lesson_taught_change_nothing(curriculum):
-    approved(curriculum).lesson_exercises_passed("konjunktiv-1")
+def test_lesson_exercises_of_a_topic_no_lesson_taught_are_rejected(curriculum):
+    approved(curriculum)
 
+    with pytest.raises(ValueError, match="no Lesson taught it"):
+        curriculum.lesson_exercises_passed("konjunktiv-1")
     assert status_of(curriculum, "konjunktiv-1").state == TopicState.NOT_SEEN
+
+
+def test_lesson_exercises_of_a_learned_topic_do_not_change_it(curriculum):
+    learned(approved(curriculum)).review("konjunktiv-1", passed=False)
+
+    curriculum.taught("konjunktiv-1")
+    curriculum.lesson_exercises_passed("konjunktiv-1")
+
+    status = status_of(curriculum, "konjunktiv-1")
+    assert status.state == TopicState.LEARNED
+    assert status.weak
 
 
 @pytest.mark.parametrize("taught", [False, True], ids=["not seen", "seen"])
@@ -226,6 +243,19 @@ def test_an_approved_change_keeps_the_topic_state_of_the_topics_it_keeps(curricu
         "partizipialattribut": TopicState.NOT_SEEN,
     }
     assert status_of(curriculum, "dativ").weak
+
+
+def test_a_not_seen_topic_moved_to_b1_or_lower_starts_as_solid_like_a_new_one(curriculum):
+    approved(curriculum).taught("konjunktiv-1")
+    moved = [
+        Topic(topic.id, topic.name, "B1") if topic.level == "B2" else topic
+        for topic in DRAFT
+    ]
+
+    curriculum.approve(curriculum.propose(moved).number)
+
+    assert status_of(curriculum, "passiv-modalverb").state == TopicState.SOLID
+    assert status_of(curriculum, "konjunktiv-1").state == TopicState.SEEN
 
 
 def test_a_removed_topic_has_no_topic_state_any_more(curriculum):
@@ -333,13 +363,12 @@ def test_there_are_no_gaps_before_the_learner_approved_a_curriculum(curriculum):
 
 def test_the_curriculum_and_topic_states_stay_in_the_vocab_file(tmp_path):
     path = tmp_path / "vocab.sqlite"
-    VocabStore(path).add("geben", "VERB", WordState.KNOWN)
-    first = Curriculum(path)
-    approved(first).review("dativ", passed=False)
-    first.close()
+    with closing(VocabStore(path)) as store:
+        store.add("geben", "VERB", WordState.KNOWN)
+    with closing(Curriculum(path)) as first:
+        approved(first).review("dativ", passed=False)
 
-    again = Curriculum(path)
-
-    assert status_of(again, "dativ").weak
-    assert [status.topic for status in again.topics()] == DRAFT
-    assert VocabStore(path).state_of("geben") == WordState.KNOWN
+    with closing(Curriculum(path)) as again, closing(VocabStore(path)) as store:
+        assert status_of(again, "dativ").weak
+        assert [status.topic for status in again.topics()] == DRAFT
+        assert store.state_of("geben") == WordState.KNOWN
