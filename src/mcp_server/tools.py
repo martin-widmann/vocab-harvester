@@ -7,14 +7,18 @@ from pathlib import Path
 from typing import Protocol
 
 from core import (
+    Curriculum,
     FrequencyTable,
     Line,
     SentenceChecker,
     SentenceToStore,
+    Topic,
+    TopicStatus,
     VocabStore,
     WordFacts,
     add_sentences,
     analyse,
+    curriculum_gaps,
     failed_sentences,
     find_episode,
     new_words,
@@ -51,6 +55,17 @@ _SENTENCE = {
         "sentence": {"type": "string"},
     },
     "required": ["base_form", "number", "sentence"],
+    "additionalProperties": False,
+}
+
+_TOPIC = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "level": {"type": "string"},
+    },
+    "required": ["id", "name", "level"],
     "additionalProperties": False,
 }
 
@@ -248,6 +263,69 @@ class Toolbox:
                     self._failed_sentences,
                 ),
                 Tool(
+                    "curriculum",
+                    "Give the Curriculum: each Grammar topic in order, with its "
+                    "Topic state (Not seen, Seen, Learned, Solid) and whether it "
+                    "is a Weak point. Also give the open proposal that waits for "
+                    "the learner's approval, or null.",
+                    {},
+                    self._curriculum,
+                ),
+                Tool(
+                    "propose_curriculum",
+                    "Propose a full Curriculum: the first draft or a change. It "
+                    "is NOT stored as the Curriculum; it waits for the learner's "
+                    "approval, and replaces an older open proposal. Send every "
+                    "topic, in teaching order, with an id (lowercase, hyphens, "
+                    'for example "konjunktiv-2"), the name a Tag shows (for '
+                    'example "Konjunktiv II") and its level (A1, A2, B1, B2, C1 '
+                    "or C2). On approval, a kept topic keeps its Topic state; an "
+                    "added topic starts as Solid up to B1, else as Not seen; a "
+                    "removed topic loses its Topic state. The result gives the "
+                    "proposal number and the ids it adds and removes.",
+                    {
+                        "topics": {
+                            "type": "array",
+                            "items": _TOPIC,
+                            "description": 'For example [{"id": "dativ", '
+                            '"name": "Dativ", "level": "A2"}].',
+                        }
+                    },
+                    self._propose_curriculum,
+                ),
+                Tool(
+                    "approve_curriculum",
+                    "Store the open proposal as the Curriculum. Call it ONLY "
+                    "after you showed the learner this proposal and the learner "
+                    "said yes to it in the chat. Never call it on your own.",
+                    {
+                        "proposal": {
+                            "type": "integer",
+                            "description": "The number of the proposal the learner approved.",
+                        }
+                    },
+                    self._approve_curriculum,
+                ),
+                Tool(
+                    "curriculum_gaps",
+                    "Pick the 2 Grammar topics a Lesson teaches, from the topics "
+                    "found in its Episode: new is the first Not seen topic in "
+                    "Curriculum order, weak is the Weak point that has been weak "
+                    "the longest. Either is null when the Episode has none. "
+                    "not_in_curriculum names found topic ids the Curriculum does "
+                    "not have (propose a change if they belong in it).",
+                    {
+                        "found_topics": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Ids of the Curriculum topics found in "
+                            "the Episode's Lines, for example "
+                            '["dativ", "konjunktiv-1"].',
+                        }
+                    },
+                    self._curriculum_gaps,
+                ),
+                Tool(
                     "open_page",
                     "Start the web server if it is not running and open the "
                     "exercise page of an Episode in the browser, on its Check tab.",
@@ -331,6 +409,26 @@ class Toolbox:
         with closing(VocabStore(self._db_path)) as store:
             return [asdict(failed) for failed in failed_sentences(store)]
 
+    def _curriculum(self) -> dict:
+        with closing(Curriculum(self._db_path)) as curriculum:
+            proposal = curriculum.proposal()
+            return {
+                "topics": [_topic_status(status) for status in curriculum.topics()],
+                "proposal": proposal and asdict(proposal),
+            }
+
+    def _propose_curriculum(self, topics: list[dict]) -> dict:
+        with closing(Curriculum(self._db_path)) as curriculum:
+            return asdict(curriculum.propose([Topic(**topic) for topic in topics]))
+
+    def _approve_curriculum(self, proposal: int) -> list[dict]:
+        with closing(Curriculum(self._db_path)) as curriculum:
+            return [_topic_status(status) for status in curriculum.approve(proposal)]
+
+    def _curriculum_gaps(self, found_topics: list[str]) -> dict:
+        with closing(Curriculum(self._db_path)) as curriculum:
+            return asdict(curriculum_gaps(curriculum, found_topics))
+
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}
 
@@ -342,3 +440,7 @@ def _line(line: Line) -> dict:
         "end": line.end.total_seconds(),
         "text": line.text,
     }
+
+
+def _topic_status(status: TopicStatus) -> dict:
+    return {**asdict(status.topic), "state": status.state.value, "weak": status.weak}
