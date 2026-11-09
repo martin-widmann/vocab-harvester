@@ -1,9 +1,10 @@
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 from fakes import FakeClock, FakeLanguageTool
 
-from core import VocabStore, WordState, build_frequency_table, import_word_facts
+from core import Curriculum, VocabStore, WordState, build_frequency_table, import_word_facts
 from core.language_tool import LanguageToolError
 from mcp_server.tools import ToolError, Toolbox
 
@@ -346,3 +347,73 @@ def test_add_sentences_tool_when_languagetool_fails_is_a_tool_error(
             {"sentences": [{"base_form": "aufgeben", "number": 1, "sentence": "Gut."}]},
         )
     assert VocabStore(db).example_sentences("aufgeben") == {}
+
+
+TOPICS = [
+    {"id": "dativ", "name": "Dativ", "level": "A2"},
+    {"id": "konjunktiv-1", "name": "Konjunktiv I", "level": "B2"},
+    {"id": "partizipialattribut", "name": "Partizipialattribut", "level": "C1"},
+]
+
+
+def approve(db, number):
+    """The learner approves on the command line; no tool can approve."""
+    with closing(Curriculum(db)) as curriculum:
+        curriculum.approve(number)
+
+
+def test_no_tool_can_store_the_curriculum_without_the_learner():
+    assert not [name for name in Toolbox(".", "unused.sqlite", page=None).tools
+                if "approve" in name]
+
+
+def test_curriculum_tool_shows_the_proposal_and_later_the_approved_curriculum(
+    toolbox, db
+):
+    proposal = toolbox.call("propose_curriculum", {"topics": TOPICS})
+
+    assert proposal["added"] == ["dativ", "konjunktiv-1", "partizipialattribut"]
+    assert toolbox.call("curriculum", {}) == {"topics": [], "proposal": proposal}
+
+    approve(db, proposal["number"])
+
+    assert toolbox.call("curriculum", {}) == {
+        "topics": [
+            {"id": "dativ", "name": "Dativ", "level": "A2", "state": "Solid",
+             "weak": False},
+            {"id": "konjunktiv-1", "name": "Konjunktiv I", "level": "B2",
+             "state": "Not seen", "weak": False},
+            {"id": "partizipialattribut", "name": "Partizipialattribut",
+             "level": "C1", "state": "Not seen", "weak": False},
+        ],
+        "proposal": None,
+    }
+
+
+def test_a_malformed_curriculum_proposal_is_a_tool_error(toolbox):
+    with pytest.raises(ToolError, match="level"):
+        toolbox.call(
+            "propose_curriculum",
+            {"topics": [{"id": "dativ", "name": "Dativ", "level": "B3"}]},
+        )
+
+
+def test_curriculum_gaps_tool_gives_one_new_and_one_weak_topic(toolbox, db):
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
+    with closing(Curriculum(db)) as curriculum:
+        curriculum.review("dativ", passed=False)
+
+    gaps = toolbox.call(
+        "curriculum_gaps", {"found_topics": ["dativ", "partizipialattribut", "futur-2"]}
+    )
+
+    assert gaps == {
+        "new": {"id": "partizipialattribut", "name": "Partizipialattribut", "level": "C1"},
+        "weak": {"id": "dativ", "name": "Dativ", "level": "A2"},
+        "not_in_curriculum": ["futur-2"],
+    }
+
+
+def test_curriculum_gaps_tool_before_a_curriculum_is_approved_is_a_tool_error(toolbox):
+    with pytest.raises(ToolError, match="No Curriculum"):
+        toolbox.call("curriculum_gaps", {"found_topics": ["dativ"]})

@@ -3,6 +3,7 @@
 python -m core new-words <episode folder>
 python -m core import-word-facts [--source <kaikki .jsonl file or URL>]
 python -m core build-frequency [--source <FrequencyWords .txt file or URL>]
+python -m core approve-curriculum <proposal number>
 """
 
 import argparse
@@ -12,6 +13,7 @@ import urllib.request
 from contextlib import closing
 from pathlib import Path
 
+from core.curriculum import Curriculum
 from core.episode import new_words
 from core.frequency import DEFAULT_FREQUENCY, build_frequency_table
 from core.vocab_store import DEFAULT_DB, VocabStore
@@ -55,7 +57,25 @@ def main(argv: list[str] | None = None) -> None:
         "(default: the 50,000 most frequent German forms)",
     )
     building.add_argument("--table", type=Path, default=DEFAULT_FREQUENCY)
+    approving = commands.add_parser(
+        "approve-curriculum",
+        help="Store the Curriculum the tutor proposed. Only the learner runs "
+        "this: no agent tool can approve the Curriculum.",
+    )
+    approving.add_argument(
+        "proposal", type=int, help="The proposal number the tutor showed you."
+    )
+    approving.add_argument("--db", type=Path, default=DEFAULT_DB)
     args = parser.parse_args(argv)
+
+    if args.command == "approve-curriculum":
+        try:
+            with closing(Curriculum(args.db)) as curriculum:
+                topics = curriculum.approve(args.proposal)
+        except ValueError as error:
+            parser.exit(1, f"error: {error}\n")
+        print(f"Stored the Curriculum: {len(topics)} Grammar topics")
+        return
 
     if args.command == "import-word-facts":
         try:

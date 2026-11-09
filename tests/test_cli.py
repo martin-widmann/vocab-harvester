@@ -1,8 +1,9 @@
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
-from core import FrequencyTable, VocabStore, WordFacts, WordState
+from core import Curriculum, FrequencyTable, Topic, VocabStore, WordFacts, WordState
 from core.cli import main
 
 EPISODE = Path(__file__).parent / "fixtures" / "Dark" / "S01E01"
@@ -68,3 +69,29 @@ def test_a_failed_build_keeps_the_frequency_table_from_before(tmp_path, capsys):
     assert exit.value.code == 1
     assert "no data changed" in capsys.readouterr().err
     assert FrequencyTable(table).count("geben") == 600
+
+
+def test_approve_curriculum_command_stores_the_proposal_the_learner_approves(
+    tmp_path, capsys
+):
+    db = tmp_path / "vocab.sqlite"
+    with closing(Curriculum(db)) as curriculum:
+        number = curriculum.propose(
+            [Topic("dativ", "Dativ", "A2"), Topic("konjunktiv-1", "Konjunktiv I", "B2")]
+        ).number
+
+    main(["approve-curriculum", str(number), "--db", str(db)])
+
+    assert "Stored the Curriculum: 2 Grammar topics" in capsys.readouterr().out
+    with closing(Curriculum(db)) as curriculum:
+        assert [status.topic.id for status in curriculum.topics()] == [
+            "dativ", "konjunktiv-1",
+        ]
+
+
+def test_approve_curriculum_command_with_no_open_proposal_fails(tmp_path, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        main(["approve-curriculum", "1", "--db", str(tmp_path / "vocab.sqlite")])
+
+    assert stopped.value.code == 1
+    assert "No open proposal" in capsys.readouterr().err

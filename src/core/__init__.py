@@ -4,6 +4,15 @@ The names exported here are the public interface. The MCP server and the
 web server are thin adapters over it.
 """
 
+from core.curriculum import (
+    Curriculum,
+    LessonTopics,
+    Proposal,
+    Topic,
+    TopicState,
+    TopicStatus,
+    curriculum_gaps,
+)
 from core.episode import NewWord, find_episode, new_words, subtitle_file
 from core.frequency import FrequencyTable, build_frequency_table
 from core.lesson_words import LessonWord, pick_lesson_words
@@ -25,18 +34,24 @@ from core.word_facts import Facts, WordFacts, import_word_facts
 
 __all__ = [
     "CHECK_KEYS",
+    "Curriculum",
     "Facts",
     "FrequencyTable",
     "Issue",
     "LanguageToolBusy",
+    "LessonTopics",
     "LessonWord",
     "Line",
     "NewWord",
+    "Proposal",
     "SentenceChecker",
     "SentenceResult",
     "SentenceStatus",
     "SentenceToStore",
     "SubtitleError",
+    "Topic",
+    "TopicState",
+    "TopicStatus",
     "VocabStore",
     "Word",
     "WordFacts",
@@ -44,6 +59,7 @@ __all__ = [
     "add_sentences",
     "analyse",
     "build_frequency_table",
+    "curriculum_gaps",
     "extract_subtitles",
     "failed_sentences",
     "find_episode",
