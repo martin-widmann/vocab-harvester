@@ -3,6 +3,7 @@
 import json
 import socket
 import threading
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -122,3 +123,37 @@ def test_a_program_that_listens_on_all_addresses_is_an_error(page, port, browser
         other.close()
 
     assert browser.opened == []
+
+
+def lesson_file(number: int, episode: str) -> dict:
+    return {
+        "schema_version": 1,
+        "number": number,
+        "episode": episode,
+        "sections": [{"number": n, "words": [], "grammar": []} for n in (1, 2, 3)],
+    }
+
+
+def test_the_page_lists_the_lessons_newest_first_and_gives_each_lesson(
+    tmp_path, page, port
+):
+    lessons = tmp_path / "lessons"
+    lessons.mkdir()
+    for number, episode in [(1, "Dark/S01E01"), (2, "Dark/S01E02")]:
+        (lessons / f"lesson-00{number}.json").write_text(
+            json.dumps(lesson_file(number, episode)), encoding="utf-8"
+        )
+    page.open("Dark/S01E01")
+
+    assert get_json(f"http://127.0.0.1:{port}/api/lessons") == [
+        {"number": 2, "episode": "Dark/S01E02"},
+        {"number": 1, "episode": "Dark/S01E01"},
+    ]
+    assert get_json(f"http://127.0.0.1:{port}/api/lessons/1") == lesson_file(
+        1, "Dark/S01E01"
+    )
+    with pytest.raises(urllib.error.HTTPError) as missing:
+        get_json(f"http://127.0.0.1:{port}/api/lessons/9")
+    assert missing.value.code == 404
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5) as response:
+        assert 'id="lesson-tab"' in response.read().decode("utf-8")
