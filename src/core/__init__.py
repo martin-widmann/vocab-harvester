@@ -13,7 +13,7 @@ from core.curriculum import (
     TopicStatus,
     curriculum_gaps,
 )
-from core.episode import NewWord, find_episode, new_words, subtitle_file
+from core.episode import NewWord, episode_key, find_episode, new_words, subtitle_file
 from core.frequency import FrequencyTable, build_frequency_table
 from core.grammar_topics import (
     Exercise,
@@ -85,6 +85,7 @@ __all__ = [
     "analyse",
     "build_frequency_table",
     "curriculum_gaps",
+    "episode_key",
     "extract_subtitles",
     "failed_sentences",
     "find_episode",

@@ -23,6 +23,8 @@ GAP = "___"
 MAX_TEXT_LENGTH = 300
 MIN_OPTIONS = 2
 MAX_OPTIONS = 4
+# Like an example sentence: 1 try and 3 retries for each exercise a topic needs.
+TRIES_PER_EXERCISE = MAX_RETRIES + 1
 
 
 @dataclass(frozen=True)
@@ -129,9 +131,14 @@ CREATE TABLE IF NOT EXISTS exercises (
     explanation TEXT NOT NULL,
     used INTEGER NOT NULL DEFAULT 0
 );
+-- The topics a Lesson picked at least once: their stock is refilled when low.
+CREATE TABLE IF NOT EXISTS stock_topics (
+    topic_id TEXT PRIMARY KEY
+);
 -- The topics the latest lesson build fills up, and their failed tries left.
 CREATE TABLE IF NOT EXISTS open_refills (
     topic_id TEXT PRIMARY KEY,
+    episode TEXT NOT NULL,
     failures_left INTEGER NOT NULL
 );
 """
@@ -188,12 +195,36 @@ class ExerciseStock:
             [(episode, item.topic_id, json.dumps(item.lines)) for item in found],
         )
 
-    def _open_refills(self, refills: list[Refill]) -> None:
-        """A lesson build: only its refills are open, each with fresh tries."""
+    def _start_build(
+        self, episode: str, picks: list[Topic], refills: list[Refill]
+    ) -> None:
+        """A lesson build: only its refills are open.
+
+        Each starts with fresh tries; a new report for the same Episode keeps
+        the tries left of the topics its last report opened.
+        """
+        kept = dict(
+            self._db.execute(
+                "SELECT topic_id, failures_left FROM open_refills WHERE episode = ?",
+                (episode,),
+            ).fetchall()
+        )
+        self._db.executemany(
+            "INSERT OR IGNORE INTO stock_topics (topic_id) VALUES (?)",
+            [(topic.id,) for topic in picks],
+        )
         self._db.execute("DELETE FROM open_refills")
         self._db.executemany(
-            "INSERT INTO open_refills (topic_id, failures_left) VALUES (?, ?)",
-            [(refill.topic.id, MAX_RETRIES * refill.needed) for refill in refills],
+            "INSERT INTO open_refills (topic_id, episode, failures_left) "
+            "VALUES (?, ?, ?)",
+            [
+                (
+                    refill.topic.id,
+                    episode,
+                    kept.get(refill.topic.id, TRIES_PER_EXERCISE * refill.needed),
+                )
+                for refill in refills
+            ],
         )
 
     def _failures_left(self, topic_id: str) -> int | None:
@@ -204,8 +235,8 @@ class ExerciseStock:
         return row and row[0]
 
     def _stocked_topics(self) -> set[str]:
-        """The topics that have ever had exercises."""
-        return {row[0] for row in self._db.execute("SELECT DISTINCT topic_id FROM exercises")}
+        """The topics a Lesson picked at least once."""
+        return {row[0] for row in self._db.execute("SELECT topic_id FROM stock_topics")}
 
     def _solved_sentences(self, topic_id: str) -> set[str]:
         rows = self._db.execute(
@@ -248,9 +279,9 @@ def report_topics(
     """A lesson build: keep the topics found in an Episode and pick the 2 its Lesson teaches.
 
     A new report for the same Episode replaces the old one. The refill names
-    the picked topics and every topic whose stock is low (fewer than 5 unused
-    exercises), each with the number of exercises it needs. Only these topics
-    take new exercises until the next lesson build.
+    the picked topics and every topic a Lesson picked before whose stock is
+    low (fewer than 5 unused exercises), each with the number of exercises it
+    needs. Only these topics take new exercises until the next lesson build.
     """
     found = _checked_report(lines, found)
     gaps = curriculum_gaps(curriculum, [item.topic_id for item in found])
@@ -273,7 +304,7 @@ def report_topics(
             refill.append(Refill(topic, in_stock, EXERCISES_PER_TOPIC - in_stock))
     with stock._db:
         stock._keep_found(episode, found)
-        stock._open_refills(refill)
+        stock._start_build(episode, picks, refill)
     return LessonGrammar(
         picked(gaps.new), picked(gaps.weak), gaps.not_in_curriculum, refill
     )
@@ -289,8 +320,8 @@ def add_exercises(
 
     LanguageTool checks each sentence with the answer in the gap. Only a topic
     of the latest lesson build's refill takes exercises, up to 5 unused in
-    stock. A topic can fail 3 tries for each exercise it needed at the build;
-    then it stops until the next lesson build.
+    stock. A topic has 1 try and 3 retries for each exercise it needed at the
+    build; when they all fail, it stops until the next lesson build.
     """
     exercises = _checked_exercises(curriculum, stock, exercises)
     results = []

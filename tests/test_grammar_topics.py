@@ -197,7 +197,8 @@ def test_a_failed_exercise_is_not_stored_and_the_topic_finder_writes_a_new_one(
 
     assert result.status == ExerciseStatus.RETRY
     assert result.problems == ["Fehler: falsch"]
-    assert result.retries_left == 14  # 3 tries for each of the 5 exercises needed
+    # 1 try and 3 retries for each of the 5 exercises needed, like a sentence.
+    assert result.retries_left == 19
     assert stock.unused("passiv-modalverb") == []
 
 
@@ -205,8 +206,8 @@ def test_a_topic_that_failed_all_its_tries_stops_until_the_next_lesson_build(
     curriculum, stock, checker
 ):
     build(curriculum, stock)
-    bad = [passiv(n, "falsch") for n in range(15)]
-    for start in range(0, 15, 5):
+    bad = [passiv(n, "falsch") for n in range(20)]
+    for start in range(0, 20, 5):
         results = add_exercises(curriculum, stock, checker, bad[start : start + 5])
 
     assert results[-1].status == ExerciseStatus.STOPPED
@@ -214,7 +215,7 @@ def test_a_topic_that_failed_all_its_tries_stops_until_the_next_lesson_build(
     with pytest.raises(ValueError, match="next lesson build"):
         add_exercises(curriculum, stock, checker, [passiv(1)])
 
-    build(curriculum, stock)
+    build(curriculum, stock, episode="Dark/S01E02")
     (result,) = add_exercises(curriculum, stock, checker, [passiv(1)])
     assert result.status == ExerciseStatus.STORED
 
@@ -345,3 +346,32 @@ def test_the_same_exercise_twice_in_one_call_is_rejected(curriculum, stock, chec
 
     with pytest.raises(ValueError, match="already"):
         add_exercises(curriculum, stock, checker, [passiv(1), passiv(1)])
+
+
+def test_a_picked_topic_with_no_stored_exercises_is_refilled_at_the_next_build(
+    curriculum, stock, checker
+):
+    build(curriculum, stock)
+    for start in range(0, 20, 5):
+        add_exercises(
+            curriculum, stock, checker, [passiv(n, "falsch") for n in range(start, start + 5)]
+        )
+    curriculum.taught("passiv-modalverb")
+
+    grammar = build(
+        curriculum, stock, [FoundTopic("konjunktiv-1", [3])], episode="Dark/S01E02"
+    )
+
+    assert Refill(PASSIV, 0, 5) in grammar.refill
+
+
+def test_a_new_report_for_the_same_episode_does_not_give_back_the_tries(
+    curriculum, stock, checker
+):
+    build(curriculum, stock)
+    add_exercises(curriculum, stock, checker, [passiv(1, "falsch")])
+
+    build(curriculum, stock)
+    (result,) = add_exercises(curriculum, stock, checker, [passiv(2, "falsch")])
+
+    assert result.retries_left == 18

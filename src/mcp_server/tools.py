@@ -23,6 +23,7 @@ from core import (
     add_sentences,
     analyse,
     curriculum_gaps,
+    episode_key,
     failed_sentences,
     find_episode,
     new_words,
@@ -498,10 +499,8 @@ class Toolbox:
             return asdict(curriculum_gaps(curriculum, found_topics))
 
     def _report_topics(self, episode: str, topics: list[dict]) -> dict:
-        folder = self._episode(episode)
-        # One key per Episode, however its name was written.
-        key = folder.relative_to(self._media_root.resolve()).as_posix()
-        lines = read_lines(subtitle_file(folder))
+        key = episode_key(self._media_root, episode)
+        lines = read_lines(subtitle_file(self._episode(episode)))
         with (
             closing(Curriculum(self._db_path)) as curriculum,
             closing(ExerciseStock(self._db_path)) as stock,

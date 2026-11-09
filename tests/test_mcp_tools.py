@@ -509,7 +509,7 @@ def test_add_exercises_tool_stores_the_exercises_languagetool_passes(toolbox, db
             "sentence": "Er sagt, das ___ falsch.",
             "status": "retry",
             "problems": ["Fehler: falsch"],
-            "retries_left": 14,
+            "retries_left": 19,
         },
     ]
     with closing(ExerciseStock(db)) as stock:

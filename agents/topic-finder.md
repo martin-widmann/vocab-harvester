@@ -36,10 +36,10 @@ You can act only through these four tools. You have no file, shell or web tools.
 
 - One complete German sentence of 6 to 15 words, with exactly one gap `___` where the topic shows. The answer fills the gap, for example "Ich helfe ___ Mann." with the answer "dem".
 - `kind` is `gap` (the learner types the answer; `options` is `[]`) or `choice` (2 to 4 `options`, the answer one of them; the wrong options are typical mistakes).
-- `explanation`: one short English sentence that gives the rule, for example "helfen takes the dative."
+- `explanation`: one short English sentence that explains the grammar, for example "helfen takes the dative."
 - The sentence with the answer in the gap must be correct standard German.
 - Neutral and everyday: work, home, food, travel, weather, friends. Never use a Line of the Episode, and never names of people or places from it. An exercise must not tell the plot.
-- Make the exercises of a topic different: different words, forms and situations, so the learner learns the rule and not one sentence.
+- Make the exercises of a topic different: different words, forms and situations, so the learner learns the Grammar topic and not one sentence.
 - Mix the kinds: about half `gap` and half `choice`.
 
 ## When you finish
