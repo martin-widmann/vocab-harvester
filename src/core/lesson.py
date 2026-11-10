@@ -27,6 +27,7 @@ from core.grammar_topics import (
 from core.lesson_words import SECTION_COUNT, SECTION_LENGTH, LessonWord, pick_lesson_words, section_of
 from core.sentences import MAX_RETRIES, SENTENCES_PER_WORD, SentenceChecker
 from core.subtitles import Line, read_lines
+from core.tagged_subtitles import tag_subtitles, tagged_subtitles_path
 from core.episode import subtitle_file
 from core.vocab_store import EpisodeLine, VocabStore
 from core.word_analysis import names
@@ -247,7 +248,11 @@ def write_lesson(
     picked for the Episode. A new write for the same Episode replaces its
     Lesson but keeps its number and its words: once the Lesson is done, its
     words are Taught words and no longer picked.
+
+    The tagged .srt of the Lesson is written next to the video (see
+    tag_subtitles).
     """
+    tagged_subtitles_path(episode_folder)  # A folder it cannot name is rejected now.
     lines = read_lines(subtitle_file(episode_folder))
     topics = _checked_grammar(episode, lines, stock, curriculum, facts, grammar)
     previous = lessons.of_episode(episode)
@@ -296,6 +301,8 @@ def write_lesson(
         "episode": episode,
         "sections": sections,
     }
+    # The tagged .srt first: if it cannot be written, no Lesson file is written.
+    tag_subtitles(lesson, episode_folder)
     lessons._write(lesson)
     return lesson
 

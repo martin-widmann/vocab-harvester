@@ -78,7 +78,11 @@ def _parse_block(block: str) -> Line | None:
 
 
 GERMAN_LANGUAGES = frozenset({"de", "deu", "ger"})
-VIDEO_SUFFIXES = frozenset({".mkv", ".mp4", ".m4v", ".mov", ".webm"})
+VIDEO_SUFFIXES = frozenset(
+    {".mkv", ".mp4", ".m4v", ".mov", ".webm", ".avi", ".wmv", ".ts"}
+)
+# The end of the name of a tagged .srt; it is never an original .srt.
+TAGGED_SUFFIX = ".tagged.srt"
 IMAGE_CODECS = frozenset(
     {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"}
 )

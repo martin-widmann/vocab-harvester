@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.subtitles import VIDEO_SUFFIXES, extract_subtitles, read_lines
+from core.subtitles import TAGGED_SUFFIX, VIDEO_SUFFIXES, extract_subtitles, read_lines
 from core.vocab_store import VocabStore
 from core.word_analysis import analyse
 
@@ -50,26 +50,38 @@ def subtitle_file(episode_folder: Path | str) -> Path:
     track is extracted to an .srt next to the video, once.
     """
     folder = Path(episode_folder)
-    if not folder.is_dir():
-        raise ValueError(f"No Episode folder {folder}")
-    files = [
-        path for path in folder.iterdir()
-        # Skip hidden files, such as the "._" files macOS puts next to each file.
-        if path.is_file() and not path.name.startswith(".")
-    ]
+    files = _files(folder)
     srts = [
         path for path in files
         if path.suffix.lower() == ".srt"
-        and not path.name.lower().endswith(".tagged.srt")
+        and not path.name.lower().endswith(TAGGED_SUFFIX)
     ]
     if len(srts) == 1:
         return srts[0]
     if srts:
         raise ValueError(f"Expected one .srt file in {folder}, found {len(srts)}")
-    videos = [path for path in files if path.suffix.lower() in VIDEO_SUFFIXES]
+    videos = episode_videos(folder)
     if len(videos) != 1:
         raise ValueError(
             f"Expected one .srt file or one video in {folder}, "
             f"found no .srt and {len(videos)} videos"
         )
     return extract_subtitles(videos[0], videos[0].with_suffix(".srt"))
+
+
+def episode_videos(episode_folder: Path | str) -> list[Path]:
+    """The video files of an Episode folder."""
+    return [
+        path for path in _files(Path(episode_folder))
+        if path.suffix.lower() in VIDEO_SUFFIXES
+    ]
+
+
+def _files(folder: Path) -> list[Path]:
+    if not folder.is_dir():
+        raise ValueError(f"No Episode folder {folder}")
+    return [
+        path for path in folder.iterdir()
+        # Skip hidden files, such as the "._" files macOS puts next to each file.
+        if path.is_file() and not path.name.startswith(".")
+    ]

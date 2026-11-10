@@ -35,7 +35,7 @@ from core import (
     read_lines,
     report_topics,
     subtitle_file,
-    tag_subtitles,
+    tagged_subtitles_path,
     write_lesson,
 )
 from core.frequency import DEFAULT_FREQUENCY
@@ -472,10 +472,10 @@ class Toolbox:
                     "be replaced. A Lesson that breaks a "
                     "rule is rejected and nothing is written: fix it and call "
                     "again. A new call for the same Episode replaces its Lesson. "
-                    "The core then writes the tagged German subtitles next to the "
+                    "The core also writes the tagged German subtitles next to the "
                     "video: the Base form of each Taught word on the first 2 Lines "
-                    "it is heard, and the name of each Grammar topic on its Lines "
-                    "from report_topics. "
+                    "it is heard in, and the name of each Grammar topic on the Line "
+                    "of its example and on its first 2 Lines from report_topics. "
                     "The result gives the Lesson number, per Section its "
                     "words and topics, and the name of the tagged subtitle file.",
                     {
@@ -655,7 +655,6 @@ class Toolbox:
                     for part in grammar
                 ],
             )
-        tagged = tag_subtitles(lesson, self._episode(episode))
         return {
             "number": lesson["number"],
             "episode": lesson["episode"],
@@ -667,7 +666,7 @@ class Toolbox:
                 }
                 for section in lesson["sections"]
             ],
-            "tagged_subtitles": tagged.name,
+            "tagged_subtitles": tagged_subtitles_path(self._episode(episode)).name,
         }
 
     def _open_page(self, episode: str) -> dict:

@@ -85,6 +85,13 @@ def test_a_grammar_tag_goes_only_on_the_lines_the_lesson_used(folder):
     assert texts(path) == [*LINES[:4], "Ich helfe dem Mann. [Dativ]", LINES[5]]
 
 
+def test_a_grammar_tag_goes_on_the_example_line_and_the_first_2_found_lines(folder):
+    path = tag_subtitles(lesson(grammar=[topic("Dativ", [1, 2, 4, 5], line=5)]), folder)
+
+    tagged = [number for number, text in enumerate(texts(path), 1) if "[Dativ]" in text]
+    assert tagged == [1, 2, 5]
+
+
 def test_a_line_with_a_word_and_a_grammar_topic_gets_both_tags(folder):
     path = tag_subtitles(
         lesson(
