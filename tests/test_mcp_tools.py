@@ -1,3 +1,4 @@
+import shutil
 from contextlib import closing
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from core import (
     WordState,
     build_frequency_table,
     import_word_facts,
+    read_lines,
 )
 from core.language_tool import LanguageToolError
 from mcp_server.tools import ToolError, Toolbox
@@ -63,9 +65,17 @@ def language_tool():
 
 
 @pytest.fixture
-def toolbox(db, page, facts, frequency, language_tool):
+def media(tmp_path):
+    """A copy of the fixture Episodes, so a tool can write next to them."""
+    root = tmp_path / "media"
+    shutil.copytree(MEDIA / "Dark", root / "Dark")
+    return root
+
+
+@pytest.fixture
+def toolbox(media, db, page, facts, frequency, language_tool):
     return Toolbox(
-        media_root=MEDIA,
+        media_root=media,
         db_path=db,
         page=page,
         facts_path=facts,
@@ -611,11 +621,28 @@ def test_write_lesson_tool_writes_the_lesson_file_of_an_episode(toolbox, db):
             {"number": 2, "words": [], "grammar": []},
             {"number": 3, "words": [], "grammar": []},
         ],
+        "tagged_subtitles": "Dark.S01E01.de.tagged.srt",
     }
     lesson = LessonFiles(db.parent / "lessons").read(1)
     assert lesson["sections"][0]["words"][0]["sentences"][0] == "Sie gibt nie auf, Satz 1."
     dativ = lesson["sections"][0]["grammar"][0]
     assert dativ["exercises"][1] == {"id": "dativ:2", **LESSON_GRAMMAR[0]["exercises"][1]}
+
+
+def test_write_lesson_tool_writes_the_tagged_subtitles_next_to_the_episode(
+    toolbox, db, media
+):
+    ready_for_the_lesson(toolbox, db)
+
+    toolbox.call("write_lesson", {"episode": "Dark/S01E01", "grammar": LESSON_GRAMMAR})
+
+    tagged = read_lines(media / "Dark" / "S01E01" / "Dark.S01E01.de.tagged.srt")
+    assert [line.text for line in tagged] == [
+        "Äh, wo ist Mikkel?",
+        "<i>Die Polizei sucht\nden Jungen in der Höhle.</i> [Dativ]",
+        "Er gab nicht auf. [aufgeben] [Konjunktiv I]",
+        "- Hm.\n- Martha wohnt in Berlin.",
+    ]
 
 
 @pytest.mark.parametrize(

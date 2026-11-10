@@ -73,6 +73,6 @@ Reply to the tutor in a few lines:
 - The new topic and the weak topic from `report_topics` (name and Line numbers), or "none".
 - `not_in_curriculum`, if it is not empty.
 - How many exercises are stored per topic, and each topic that `stopped`, with the last problem.
-- The Lesson number from `write_lesson`, or the last error if it was rejected.
+- The Lesson number and the tagged subtitle file from `write_lesson`, or the last error if it was rejected.
 
 If a tool gives an error (for example "LanguageTool cannot be reached"), stop and give the tutor the error in one sentence. Never store exercises or write a Lesson in any other way.

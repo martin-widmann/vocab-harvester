@@ -31,6 +31,36 @@ def read_lines(srt_path: Path | str) -> list[Line]:
     return [line for line in map(_parse_block, blocks) if line is not None]
 
 
+def write_lines(srt_path: Path | str, lines: list[Line]) -> Path:
+    """Write Lines to an .srt file, in the given order.
+
+    The file is written to a temporary file first and then moved in place, so
+    a player never reads half a file.
+    """
+    target = Path(srt_path)
+    blocks = [
+        f"{line.number}\n{_srt_time(line.start)} --> {_srt_time(line.end)}\n"
+        f"{line.text}\n"
+        for line in lines
+    ]
+    temporary = target.with_name(target.name + ".tmp")
+    try:
+        temporary.write_text("\n".join(blocks), encoding="utf-8", newline="\n")
+        os.replace(temporary, target)
+    except OSError as error:
+        temporary.unlink(missing_ok=True)
+        raise SubtitleError(f"Cannot write {target.name}: {error}") from error
+    return target
+
+
+def _srt_time(at: timedelta) -> str:
+    milliseconds = round(at.total_seconds() * 1000)
+    seconds, milliseconds = divmod(milliseconds, 1000)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
+
+
 def _parse_block(block: str) -> Line | None:
     rows = block.strip().split("\n")
     if len(rows) < 3 or not rows[0].strip().isdigit():
