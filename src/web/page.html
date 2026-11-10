@@ -17,7 +17,31 @@
                border-radius: 6px 6px 0 0; background: none; color: var(--muted); font: inherit; }
   nav button[aria-selected="true"] { background: var(--bg); color: var(--fg); font-weight: 600;
                                      margin-bottom: -1px; }
+  nav button { cursor: pointer; }
   main { max-width: 560px; margin: 0 auto; padding: 32px 16px; text-align: center; }
+  #lesson { max-width: 760px; text-align: left; }
+  #lesson-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+  #lesson-list button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px;
+                        background: none; color: var(--fg); font: inherit; cursor: pointer; }
+  #lesson-list button[aria-current="true"] { font-weight: 600; border-color: var(--fg); }
+  .section { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 24px; }
+  .section h3 { color: var(--muted); font-size: 1rem; font-weight: 600; }
+  .item { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+  .head { font-size: 1.4rem; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .item ul { margin: 8px 0 0; padding-left: 20px; }
+  .rule { white-space: pre-line; }
+  .exercise { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 8px; }
+  .exercise form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .exercise input, .exercise textarea { font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+                    border-radius: 6px; background: var(--bg); color: var(--fg); }
+  .exercise textarea { flex: 1 1 100%; resize: vertical; }
+  .exercise button, #finish { font: inherit; padding: 4px 12px; border: 1px solid var(--line);
+                              border-radius: 6px; background: none; color: var(--fg); cursor: pointer; }
+  .exercise button:disabled, #finish:disabled { cursor: default; opacity: .6; }
+  .right { color: var(--known); font-weight: 600; }
+  .wrong { color: #c0392b; font-weight: 600; }
+  #finish { margin-top: 24px; padding: 8px 20px; font-weight: 600; }
   #status { color: var(--muted); }
   #word { font-size: 2.6rem; font-weight: 600; margin: 32px 0 4px; overflow-wrap: anywhere; }
   #type { color: var(--muted); letter-spacing: .05em; }
@@ -28,12 +52,31 @@
   [data-key="K"] { color: var(--known); } [data-key="U"] { color: var(--unknown); }
   [data-key="X"] { color: var(--excluded); }
   #error { color: #c0392b; min-height: 1.5em; }
+  #review-context { font-size: 1.3rem; white-space: pre-line; margin: 24px 0; }
+  #review-word { font-size: 2.2rem; font-weight: 600; overflow-wrap: anywhere; }
+  #review-card form { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+  #review-card input { font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+                       border-radius: 6px; background: var(--bg); color: var(--fg); }
+  #review-card button { font: inherit; padding: 6px 14px; border: 1px solid var(--line);
+                        border-radius: 6px; background: none; color: var(--fg); cursor: pointer; }
+  #review-show { margin-top: 16px; }
+  #review-grades { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+  #review-grades kbd { margin-right: 4px; color: var(--muted); }
+  #review-meaning { font-size: 1.2rem; margin-top: 16px; }
+  #grammar-review { border-top: 1px solid var(--line); margin-top: 32px; padding-top: 16px; }
+  #grammar-topic { font-size: 1.2rem; font-weight: 600; }
+  #grammar-sentence { font-size: 1.3rem; margin: 16px 0; }
+  #grammar-form { justify-content: center; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<nav role="tablist"><button role="tab" aria-selected="true">Check</button></nav>
-<main>
+<nav role="tablist">
+  <button role="tab" id="check-tab" aria-controls="check" aria-selected="true">Check</button>
+  <button role="tab" id="lesson-tab" aria-controls="lesson" aria-selected="false">Lesson</button>
+  <button role="tab" id="review-tab" aria-controls="review" aria-selected="false">Review</button>
+</nav>
+<main id="check" role="tabpanel" aria-labelledby="check-tab">
   <p id="status">Reading the Episode…</p>
   <section id="card" hidden>
     <div id="word"></div>
@@ -45,6 +88,48 @@
     </div>
   </section>
   <p id="error" role="alert"></p>
+</main>
+<main id="lesson" role="tabpanel" aria-labelledby="lesson-tab" hidden>
+  <div id="lesson-list" aria-label="Lessons"></div>
+  <p id="lesson-status" class="muted">Reading the Lessons…</p>
+  <article id="lesson-content"></article>
+</main>
+<main id="review" role="tabpanel" aria-labelledby="review-tab" hidden>
+  <p id="review-status" class="muted">Reading the due cards…</p>
+  <section id="review-card" hidden>
+    <p id="review-context"></p>
+    <div id="review-word"></div>
+    <div id="review-seen" class="muted"></div>
+    <form id="review-article" hidden>
+      <input id="review-article-input" aria-label="der, die or das" placeholder="der, die or das" autocomplete="off">
+    </form>
+    <button id="review-show" type="button">Show the meaning</button>
+    <div id="review-back" hidden>
+      <p id="review-meaning"></p>
+      <div id="review-grades">
+        <button type="button" data-rating="Again"><kbd>1</kbd>Again</button>
+        <button type="button" data-rating="Hard"><kbd>2</kbd>Hard</button>
+        <button type="button" data-rating="Good"><kbd>3</kbd>Good</button>
+        <button type="button" data-rating="Easy"><kbd>4</kbd>Easy</button>
+      </div>
+    </div>
+    <div id="review-result" hidden>
+      <p id="review-article-result" aria-live="polite"></p>
+      <button id="review-next" type="button">Next card</button>
+    </div>
+  </section>
+  <p id="review-error" class="wrong" role="alert"></p>
+  <section id="grammar-review" aria-label="Grammar review">
+    <p id="grammar-status" class="muted">Reading the due grammar exercises…</p>
+    <div id="grammar-card" class="exercise" hidden>
+      <div id="grammar-topic"></div>
+      <p id="grammar-sentence"></p>
+      <form id="grammar-form"></form>
+      <p id="grammar-result" aria-live="polite"></p>
+      <button id="grammar-next" type="button" hidden>Next exercise</button>
+    </div>
+    <p id="grammar-error" class="wrong" role="alert"></p>
+  </section>
 </main>
 <script>
 const episode = new URLSearchParams(location.search).get("episode") || "";
@@ -106,6 +191,7 @@ function showError(message) {
 }
 
 document.addEventListener("keydown", (event) => {
+  if ($("check").hidden) return;
   const key = event.key.toUpperCase();
   if (["K", "U", "X"].includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
     answer(key);
@@ -115,6 +201,516 @@ for (const button of document.querySelectorAll("#keys button")) {
   button.addEventListener("click", () => answer(button.dataset.key));
 }
 load().catch((error) => showError(String(error)));
+
+// The Lesson tab. Every text from a Lesson file goes in with textContent.
+// Each request gets a number; the answer of an older request is dropped.
+let lessonRequest = 0;
+
+function showTab(name) {
+  for (const tab of ["check", "lesson", "review"]) {
+    $(tab).hidden = tab !== name;
+    $(tab + "-tab").setAttribute("aria-selected", String(tab === name));
+  }
+  history.replaceState(null, "", location.pathname + location.search + (name === "check" ? "" : "#" + name));
+  if (name === "review") {
+    loadReviews().catch((error) => { $("review-status").textContent = String(error); });
+    loadGrammar().catch((error) => { $("grammar-status").textContent = String(error); });
+  }
+  if (name === "lesson") {
+    // Read the list again each time: a Lesson may be written while the page is open.
+    loadLessons().catch((error) => { $("lesson-status").textContent = String(error); });
+  }
+}
+
+function element(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+
+async function loadLessons() {
+  const request = ++lessonRequest;
+  const response = await fetch("/api/lessons");
+  if (request !== lessonRequest) return;
+  if (!response.ok) { $("lesson-status").textContent = await errorText(response); return; }
+  const lessons = await response.json();
+  if (request !== lessonRequest) return;
+  const shown = $("lesson-list").querySelector('[aria-current="true"]');
+  const list = $("lesson-list");
+  list.replaceChildren();
+  if (!lessons.length) { $("lesson-status").textContent = "There is no Lesson yet."; return; }
+  for (const info of lessons) {
+    const button = element("button", `Lesson ${info.number} · ${info.episode}`);
+    button.dataset.number = info.number;
+    button.addEventListener("click", () => openLesson(info.number));
+    list.append(button);
+  }
+  const kept = shown && lessons.find((info) => String(info.number) === shown.dataset.number);
+  const own = lessons.find((info) => info.episode === episode);
+  await openLesson((kept || own || lessons[0]).number);
+}
+
+async function openLesson(number) {
+  const request = ++lessonRequest;
+  for (const button of $("lesson-list").children) {
+    button.setAttribute("aria-current", String(button.dataset.number === String(number)));
+  }
+  $("lesson-content").replaceChildren();
+  $("lesson-status").textContent = "Reading the Lesson…";
+  const response = await fetch("/api/lessons/" + number);
+  if (request !== lessonRequest) return;
+  if (!response.ok) { $("lesson-status").textContent = await errorText(response); return; }
+  const lesson = await response.json();
+  if (request !== lessonRequest) return;
+  $("lesson-status").textContent = "";
+  shownLesson = lesson;
+  const content = $("lesson-content");
+  content.append(element("h2", `Lesson ${lesson.number} · ${lesson.episode}`));
+  for (const section of lesson.sections) content.append(sectionView(section));
+  content.append(finishView());
+}
+
+// What the learner does in an open exercise; the grader checks the answer.
+const OPEN_TASKS = {
+  sentence: "Write your own sentence.",
+  translate: "Translate into German.",
+  explain: "Explain why.",
+};
+
+// The Lesson on the page: its number, the saved results by exercise id, finished.
+let shownLesson = null;
+
+function exerciseView(exercise) {
+  const view = element("div", null, "exercise");
+  const open = OPEN_TASKS[exercise.kind];
+  if (open) view.append(element("p", open, "muted"));
+  view.append(element("p", exercise.sentence));
+  const form = element("form");
+  const result = element("p", null, "result");
+  result.setAttribute("aria-live", "polite");
+  const send = (answer) => checkExercise(exercise, answer, form, result);
+  if (exercise.kind === "choice") {
+    for (const option of exercise.options) {
+      const button = element("button", option);
+      button.type = "button";
+      button.addEventListener("click", () => send(option));
+      form.append(button);
+    }
+  } else if (open) {
+    const input = element("textarea");
+    input.rows = 2;
+    input.maxLength = 500;
+    input.setAttribute("aria-label", open);
+    input.placeholder = exercise.kind === "explain" ? "Your reason, in English or German" : "Your German sentence";
+    // The answer is one sentence: Enter checks it, as in the other exercises.
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); form.requestSubmit(); }
+    });
+    const button = element("button", "Check");
+    form.append(input, button);
+    form.addEventListener("submit", (event) => { event.preventDefault(); send(input.value); });
+  } else {
+    const input = element("input");
+    input.setAttribute("aria-label", exercise.kind === "article" ? "der, die or das" : "Your answer");
+    input.placeholder = exercise.kind === "article" ? "der, die or das" : "Your answer";
+    input.autocomplete = "off";
+    const button = element("button", "Check");
+    form.append(input, button);
+    form.addEventListener("submit", (event) => { event.preventDefault(); send(input.value); });
+  }
+  view.append(form, result);
+  const saved = shownLesson.results[exercise.id];
+  if (saved) showResult(saved, form, result, saved.answer);
+  else if (shownLesson.finished) lockForm(form);
+  return view;
+}
+
+async function checkExercise(exercise, answer, form, result) {
+  if (!answer.trim()) return;
+  lockForm(form);
+  if (OPEN_TASKS[exercise.kind]) {
+    result.className = "muted";
+    result.textContent = "Checking… this can take a minute.";
+  }
+  const lesson = shownLesson;
+  try {
+    const response = await fetch(`/api/lessons/${lesson.number}/answers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exercise_id: exercise.id, answer }),
+    });
+    if (!response.ok) {
+      result.className = "wrong";
+      result.textContent = await errorText(response);
+      unlockForm(form);
+      return;
+    }
+    const checked = await response.json();
+    lesson.results[exercise.id] = { ...checked, answer };
+    showResult(checked, form, result, answer);
+  } catch (error) {
+    result.className = "wrong";
+    result.textContent = `The answer was not saved: ${error}`;
+    unlockForm(form);
+  }
+}
+
+function showResult(checked, form, result, answer) {
+  lockForm(form);
+  const input = form.querySelector("input, textarea");
+  if (input) input.value = answer;
+  for (const button of form.querySelectorAll("button")) {
+    if (button.textContent === answer) button.setAttribute("aria-pressed", "true");
+  }
+  result.className = "";
+  result.replaceChildren(
+    element("span", checked.right ? "Right. " : "Wrong. ", checked.right ? "right" : "wrong"),
+    element("span", checked.right ? checked.reason : `${checked.correction} · ${checked.reason}`),
+  );
+}
+
+function lockForm(form) {
+  for (const control of form.querySelectorAll("input, textarea, button")) control.disabled = true;
+}
+
+function unlockForm(form) {
+  for (const control of form.querySelectorAll("input, textarea, button")) control.disabled = false;
+}
+
+function lessonExercises(lesson) {
+  return lesson.sections.flatMap((section) =>
+    [...section.words, ...section.grammar].flatMap((item) => item.exercises || []));
+}
+
+function finishView() {
+  const view = element("div");
+  const status = element("p", null, "muted");
+  status.setAttribute("aria-live", "polite");
+  const button = element("button", "Finish");
+  button.id = "finish";
+  if (shownLesson.finished) {
+    button.disabled = true;
+    status.textContent = "This Lesson is finished.";
+  }
+  button.addEventListener("click", async () => {
+    const lesson = shownLesson;
+    const open = lessonExercises(lesson).filter((exercise) => !lesson.results[exercise.id]).length;
+    if (open && !confirm(`${open} exercises have no answer. They count as wrong. Finish anyway?`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/lessons/${lesson.number}/finish`, { method: "POST" });
+      if (!response.ok) {
+        status.textContent = await errorText(response);
+        button.disabled = false;
+        return;
+      }
+      const finished = await response.json();
+      lesson.finished = true;
+      for (const form of $("lesson-content").querySelectorAll(".exercise form")) lockForm(form);
+      const lines = [`Finished. ${finished.taught_words.length} words are now Taught words.`];
+      for (const topic of finished.topics) {
+        lines.push(`${topic.topic_id}: ${topic.right} of ${topic.exercises} right, now ${topic.state}.`);
+      }
+      status.textContent = lines.join(" ");
+    } catch (error) {
+      status.textContent = `Finish did not work: ${error}`;
+      button.disabled = false;
+    }
+  });
+  view.append(button, status);
+  return view;
+}
+
+function sectionView(section) {
+  const view = element("section", null, "section");
+  const minutes = section.end_minute === null
+    ? `about ${section.start_minute} min to the end`
+    : `about ${section.start_minute}–${section.end_minute} min`;
+  view.append(element("h3", `Section ${section.number} · ${minutes}`));
+  if (!section.words.length && !section.grammar.length) {
+    view.append(element("p", "Nothing new in this Section.", "muted"));
+  }
+  for (const word of section.words) view.append(wordView(word));
+  for (const topic of section.grammar) view.append(grammarView(topic));
+  return view;
+}
+
+const ARTICLES = { masculine: "der", feminine: "die", neuter: "das" };
+
+function wordView(word) {
+  const view = element("div", null, "item");
+  const article = word.word_type === "NOUN" && ARTICLES[word.gender];
+  view.append(element("div", article ? `${article} ${word.base_form}` : word.base_form, "head"));
+  const facts = [word.word_type];
+  if (word.plural) facts.push(`plural: ${word.plural}`);
+  if (word.verb_forms) {
+    const forms = word.verb_forms;
+    facts.push([forms.present, forms.past, forms.participle].filter(Boolean).join(", "));
+    if (forms.auxiliary) facts.push(`with ${forms.auxiliary}`);
+  }
+  if (word.parts && word.parts.length) facts.push(`parts: ${word.parts.join(" + ")}`);
+  view.append(element("div", facts.join(" · "), "muted"));
+  const meaning = word.meaning
+    ? word.meaning + (word.meaning_status === "unchecked" ? " (unchecked)" : "")
+    : "No meaning in the word facts data.";
+  view.append(element("p", meaning));
+  const sentences = element("ul");
+  for (const sentence of word.sentences) sentences.append(element("li", sentence));
+  view.append(sentences);
+  for (const exercise of word.exercises || []) view.append(exerciseView(exercise));
+  return view;
+}
+
+function grammarView(topic) {
+  const view = element("div", null, "item");
+  const kind = topic.kind === "weak" ? "Weak point" : "New topic";
+  view.append(element("div", `Grammar: ${topic.name}`, "head"));
+  view.append(element("div", kind, "muted"));
+  view.append(element("p", topic.example));
+  view.append(element("p", topic.rule, "rule"));
+  const cases = element("ul");
+  for (const text of topic.cases) cases.append(element("li", text));
+  view.append(cases);
+  for (const exercise of topic.exercises || []) view.append(exerciseView(exercise));
+  return view;
+}
+
+// The Review tab: one due vocab card at a time. The learner says the meaning
+// in their head, shows it, and grades themselves. A noun also needs der, die
+// or das, which the server checks.
+let reviewCards = [], reviewIndex = 0, reviewBusy = false, reviewDone = 0;
+
+async function loadReviews() {
+  const response = await fetch("/api/reviews");
+  if (!response.ok) { $("review-status").textContent = await errorText(response); return; }
+  reviewCards = await response.json();
+  reviewIndex = 0;
+  showReview();
+}
+
+function showReview() {
+  const card = reviewCards[reviewIndex];
+  $("review-card").hidden = !card;
+  $("review-error").textContent = "";
+  if (!card) {
+    $("review-status").textContent = reviewDone
+      ? `${reviewDone} cards reviewed. No more cards are due now.`
+      : "No vocab cards are due now.";
+    return;
+  }
+  $("review-status").textContent = `Card ${reviewIndex + 1} of ${reviewCards.length}`;
+  // The word in the episode Line is in **bold**: every other part of the split.
+  $("review-context").replaceChildren(...card.context.split("**").map(
+    (part, index) => index % 2 ? element("b", part) : document.createTextNode(part)));
+  $("review-word").textContent = card.base_form;
+  $("review-seen").textContent = card.seen_form && card.seen_form !== card.base_form
+    ? `heard as: ${card.seen_form} · ${card.word_type}` : card.word_type;
+  $("review-article").hidden = !card.needs_article;
+  $("review-article-input").value = "";
+  $("review-article-input").disabled = false;
+  $("review-show").hidden = false;
+  $("review-back").hidden = true;
+  $("review-result").hidden = true;
+  $("review-meaning").textContent = card.meaning || "No meaning in the word facts data.";
+  if (card.needs_article) $("review-article-input").focus();
+}
+
+function showMeaning() {
+  const card = reviewCards[reviewIndex];
+  if (!card || !$("review-back").hidden || !$("review-result").hidden) return;
+  if (card.needs_article && !$("review-article-input").value.trim()) {
+    $("review-error").textContent = "Type der, die or das first.";
+    return;
+  }
+  $("review-error").textContent = "";
+  $("review-article-input").disabled = true;
+  $("review-show").hidden = true;
+  $("review-back").hidden = false;
+}
+
+async function gradeReview(rating) {
+  const card = reviewCards[reviewIndex];
+  if (reviewBusy || !card || $("review-back").hidden) return;
+  reviewBusy = true;
+  try {
+    const response = await fetch("/api/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        base_form: card.base_form,
+        rating,
+        article: card.needs_article ? $("review-article-input").value : null,
+      }),
+    });
+    if (!response.ok) {
+      const message = await errorText(response);
+      $("review-error").textContent = message;
+      if (response.status === 400 && card.needs_article && message.includes("der, die or das")) {
+        // A bad article: type it again.
+        $("review-article-input").disabled = false;
+        $("review-back").hidden = true;
+        $("review-show").hidden = false;
+      } else {
+        // For example the card is no longer due (graded in another tab, or
+        // a new day began): go on to the next card.
+        $("review-back").hidden = true;
+        $("review-article-result").replaceChildren();
+        $("review-result").hidden = false;
+        $("review-next").focus();
+      }
+      return;
+    }
+    const graded = await response.json();
+    reviewDone += 1;
+    if (!graded.article) return nextReview();
+    $("review-back").hidden = true;
+    $("review-result").hidden = false;
+    const result = graded.article;
+    $("review-article-result").replaceChildren(
+      element("span", result.right ? "Right. " : "Wrong. ", result.right ? "right" : "wrong"),
+      element("span", result.right ? result.reason : `${result.correction} · ${result.reason}`),
+    );
+    $("review-next").focus();
+  } catch (error) {
+    $("review-error").textContent = `The grade was not saved: ${error}`;
+  } finally {
+    reviewBusy = false;
+  }
+}
+
+function nextReview() {
+  reviewIndex += 1;
+  // At the end, ask again: a card graded Again may be due again by now.
+  if (reviewIndex >= reviewCards.length) {
+    loadReviews().catch((error) => { $("review-status").textContent = String(error); });
+  } else {
+    showReview();
+  }
+}
+
+$("review-article").addEventListener("submit", (event) => { event.preventDefault(); showMeaning(); });
+$("review-show").addEventListener("click", showMeaning);
+$("review-next").addEventListener("click", nextReview);
+for (const button of document.querySelectorAll("#review-grades button")) {
+  button.addEventListener("click", () => gradeReview(button.dataset.rating));
+}
+document.addEventListener("keydown", (event) => {
+  if ($("review").hidden || event.ctrlKey || event.metaKey || event.altKey) return;
+  // Typing in an answer field is not a grade of the vocab card.
+  if (event.target.closest("input, textarea, #grammar-review")) return;
+  const rating = { 1: "Again", 2: "Hard", 3: "Good", 4: "Easy" }[event.key];
+  if (rating) gradeReview(rating);
+  else if (event.key === " " && !$("review-show").hidden) { event.preventDefault(); showMeaning(); }
+});
+
+// The grammar part of the Review tab: one due grammar exercise at a time,
+// each a new one from the exercise stock. The server checks the answer and
+// moves the Topic state.
+let grammarCards = [], grammarIndex = 0, grammarBusy = false, grammarDone = 0;
+
+async function loadGrammar() {
+  const response = await fetch("/api/grammar-reviews");
+  if (!response.ok) { $("grammar-status").textContent = await errorText(response); return; }
+  grammarCards = await response.json();
+  grammarIndex = 0;
+  showGrammar();
+}
+
+function showGrammar() {
+  const card = grammarCards[grammarIndex];
+  $("grammar-card").hidden = !card;
+  $("grammar-error").textContent = "";
+  if (!card) {
+    $("grammar-status").textContent = grammarDone
+      ? `${grammarDone} grammar exercises done. No more are due today.`
+      : "No grammar exercises are due today.";
+    return;
+  }
+  $("grammar-status").textContent = `Grammar exercise ${grammarIndex + 1} of ${grammarCards.length}`;
+  $("grammar-topic").textContent = card.weak ? `${card.topic_name} (Weak point)` : card.topic_name;
+  $("grammar-sentence").textContent = card.sentence;
+  $("grammar-result").replaceChildren();
+  $("grammar-next").hidden = true;
+  const form = $("grammar-form");
+  form.replaceChildren();
+  if (card.kind === "choice") {
+    for (const option of card.options) {
+      const button = element("button", option);
+      button.type = "button";
+      button.addEventListener("click", () => answerGrammar(option));
+      form.append(button);
+    }
+  } else {
+    const input = element("input");
+    input.setAttribute("aria-label", "Your answer");
+    input.placeholder = "Your answer";
+    input.autocomplete = "off";
+    form.append(input, element("button", "Check"));
+  }
+}
+
+async function answerGrammar(answer) {
+  const card = grammarCards[grammarIndex];
+  if (grammarBusy || !card || !answer.trim()) return;
+  grammarBusy = true;
+  const form = $("grammar-form");
+  for (const control of form.elements) control.disabled = true;
+  try {
+    const response = await fetch("/api/grammar-reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exercise_id: card.exercise_id, answer }),
+    });
+    if (!response.ok) {
+      $("grammar-error").textContent = await errorText(response);
+      if (response.status === 400) {
+        // For example the exercise is no longer due: go on to the next one.
+        $("grammar-next").hidden = false;
+      } else {
+        for (const control of form.elements) control.disabled = false;
+      }
+      return;
+    }
+    const graded = await response.json();
+    grammarDone += 1;
+    const result = graded.result;
+    $("grammar-result").replaceChildren(
+      element("span", result.right ? "Right. " : "Wrong. ", result.right ? "right" : "wrong"),
+      element("span", `${result.correction} · ${result.reason}`),
+      element("div", `${card.topic_name}: ${graded.state}${graded.weak ? ", Weak point" : ""}`, "muted"),
+    );
+    $("grammar-next").hidden = false;
+    $("grammar-next").focus();
+  } catch (error) {
+    $("grammar-error").textContent = `The answer was not saved: ${error}`;
+    for (const control of form.elements) control.disabled = false;
+  } finally {
+    grammarBusy = false;
+  }
+}
+
+function nextGrammar() {
+  grammarIndex += 1;
+  if (grammarIndex >= grammarCards.length) {
+    loadGrammar().catch((error) => { $("grammar-status").textContent = String(error); });
+  } else {
+    showGrammar();
+  }
+}
+
+$("grammar-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = $("grammar-form").querySelector("input");
+  if (input) answerGrammar(input.value);
+});
+$("grammar-next").addEventListener("click", nextGrammar);
+
+$("check-tab").addEventListener("click", () => showTab("check"));
+$("lesson-tab").addEventListener("click", () => showTab("lesson"));
+$("review-tab").addEventListener("click", () => showTab("review"));
+if (location.hash === "#lesson") showTab("lesson");
+if (location.hash === "#review") showTab("review");
 </script>
 </body>
 </html>
