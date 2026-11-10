@@ -8,7 +8,7 @@ MEDIA = Path(__file__).parent / "fixtures"
 
 
 def test_an_episode_is_found_from_its_name_under_the_media_root():
-    assert find_episode(MEDIA, "Dark/S01E02") == (MEDIA / "Dark" / "S01E02").resolve()
+    assert find_episode(MEDIA, "Dark/S01E02").folder == (MEDIA / "Dark" / "S01E02").resolve()
 
 
 def test_a_missing_episode_is_rejected():

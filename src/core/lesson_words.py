@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from core.episode import subtitle_file
+from core.episode import Episode, as_episode, episode_lines
 from core.frequency import FrequencyTable
-from core.subtitles import Line, read_lines
+from core.subtitles import Line
 from core.vocab_store import VocabStore, WordState
 from core.word_analysis import analyse_all
 
@@ -28,7 +28,7 @@ class LessonWord:
 
 
 def pick_lesson_words(
-    episode_folder: Path | str,
+    episode: Episode | Path | str,
     store: VocabStore,
     frequency: FrequencyTable,
 ) -> list[LessonWord]:
@@ -37,11 +37,14 @@ def pick_lesson_words(
     Base forms the frequency table does not have come last. Words with the same
     count keep the order they are first heard in. Each word goes to the
     Section of the first Line it is heard in: 1, 2 or 3 for about 0-15,
-    15-30 and 30-45 minutes; a Line after 45 minutes is in Section 3.
+    15-30 and 30-45 minutes; a Line after 45 minutes is in Section 3. For a
+    film, only the Lines in the Episode's time range count, and the minutes
+    are from the start of the Episode.
 
     Picking changes no word state: the words not picked stay Unknown.
     """
-    lines = read_lines(subtitle_file(episode_folder))
+    episode = as_episode(episode)
+    lines = episode_lines(episode)
     found: dict[str, LessonWord] = {}
     for line, words in zip(lines, analyse_all(line.text for line in lines)):
         for word in words:
@@ -53,7 +56,7 @@ def pick_lesson_words(
                 word.base_form,
                 word.word_type,
                 frequency.count(word.base_form),
-                section_of(line),
+                section_of(line, episode.start),
                 line,
                 word.seen_form,
             )
@@ -64,6 +67,7 @@ def pick_lesson_words(
     return ranked[:LESSON_WORD_LIMIT]
 
 
-def section_of(line: Line) -> int:
-    """The Section of a Line: 1, 2 or 3."""
-    return min(int(line.start // SECTION_LENGTH) + 1, SECTION_COUNT)
+def section_of(line: Line, episode_start: timedelta = timedelta(0)) -> int:
+    """The Section of a Line: 1, 2 or 3, counted from the start of its Episode."""
+    into_episode = max(line.start - episode_start, timedelta(0))
+    return min(int(into_episode // SECTION_LENGTH) + 1, SECTION_COUNT)

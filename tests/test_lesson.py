@@ -27,6 +27,8 @@ from core import (
     build_frequency_table,
     check_answer,
     due_cards,
+    episode_lines,
+    find_episode,
     finish_lesson,
     import_word_facts,
     new_words,
@@ -732,3 +734,84 @@ def test_a_lesson_whose_tagged_subtitles_cannot_be_named_is_not_written(
 
     assert lessons.lessons() == []
     assert not list(folder.glob("*.tagged.srt"))
+
+
+# A film: its Episode P2 is a time range of the film's one .srt.
+
+FILM_START = 45  # P2 starts 45 minutes into the film.
+
+
+@pytest.fixture
+def film(tmp_path):
+    """A film with a P1 Line and the Lesson's LINES in P2, 45 minutes later."""
+    folder = write_episode(
+        tmp_path / "media" / "Film",
+        [(1, "Magnus wartet in der Höhle.")]
+        + [(FILM_START + minute, text) for minute, text in LINES],
+    )
+    (folder / "film.json").write_text(
+        '{"P1": {"start": "0:00:00", "end": "0:45:00"},'
+        ' "P2": {"start": "0:45:00", "end": null}}',
+        encoding="utf-8",
+    )
+    return folder
+
+
+@pytest.fixture
+def film_write(film, db, lessons, frequency, facts, curriculum, checker):
+    episode = find_episode(film.parent, "Film/P2")
+    store = VocabStore(db)
+    for word in new_words(episode, store):
+        record_answer(store, word, "U" if word.base_form in UNKNOWN else "K")
+    add_sentences(store, checker, [sentence(word, n) for word in sorted(UNKNOWN) for n in (1, 2, 3)])
+    stock = ExerciseStock(db)
+    report_topics(
+        curriculum,
+        stock,
+        "Film/P2",
+        episode_lines(episode),
+        [FoundTopic("dativ", [3]), FoundTopic("passiv-modalverb", [5])],
+    )
+
+    def write(grammar=(replace(DATIV, line=3), PASSIV)):
+        return write_lesson(
+            lessons,
+            "Film/P2",
+            episode,
+            store=store,
+            frequency=frequency,
+            facts=facts,
+            curriculum=curriculum,
+            stock=stock,
+            checker=checker,
+            grammar=list(grammar),
+        )
+
+    yield write
+    stock.close()
+    store.close()
+
+
+def test_a_film_lesson_has_only_its_episode_with_sections_from_the_episode_start(
+    film_write, film
+):
+    lesson = film_write()
+
+    assert [words_of(section) for section in lesson["sections"]] == [
+        ["suchen", "Höhle"],
+        ["helfen"],
+        ["aufgeben"],
+    ]
+    assert [
+        [topic["topic_id"] for topic in section["grammar"]] for section in lesson["sections"]
+    ] == [[], ["dativ"], ["passiv-modalverb"]]
+    tagged = [line.text for line in read_lines(film / "episode.de.tagged.srt")]
+    assert tagged[0] == "Magnus wartet in der Höhle."
+    assert tagged[1] == "Die Polizei sucht den Jungen in der Höhle. [suchen] [Höhle]"
+
+
+def test_a_film_lesson_may_not_use_a_name_from_another_episode_of_the_film(film_write):
+    spoiler = replace(PASSIV, cases=["Magnus muss gefunden werden.", *PASSIV.cases[1:]])
+
+    with pytest.raises(ValueError, match="Magnus"):
+        film_write(grammar=[replace(DATIV, line=3), spoiler])

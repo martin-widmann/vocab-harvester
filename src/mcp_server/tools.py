@@ -8,6 +8,7 @@ from typing import Protocol
 
 from core import (
     Curriculum,
+    Episode,
     Exercise,
     ExerciseStock,
     FoundTopic,
@@ -28,13 +29,12 @@ from core import (
     analyse,
     curriculum_gaps,
     episode_key,
+    episode_lines,
     failed_sentences,
     find_episode,
     new_words,
     pick_lesson_words,
-    read_lines,
     report_topics,
-    subtitle_file,
     tagged_subtitles_path,
     write_lesson,
 )
@@ -46,7 +46,8 @@ from web.launch import PageError
 
 _EPISODE = {
     "type": "string",
-    "description": 'The Episode name under the media folder, for example "Dark/S01E03".',
+    "description": "The Episode name under the media folder, for example "
+    '"Dark/S01E03", or for a film its Episode P1-P3, for example "Der Film/P2".',
 }
 
 _WORD = {
@@ -518,12 +519,12 @@ class Toolbox:
         except (ValueError, PageError) as error:
             raise ToolError(str(error)) from error
 
-    def _episode(self, name: str) -> Path:
+    def _episode(self, name: str) -> Episode:
         return find_episode(self._media_root, name)
 
     def _parse_subtitles(self, episode: str) -> list[dict]:
         return [
-            _line(line) for line in read_lines(subtitle_file(self._episode(episode)))
+            _line(line) for line in episode_lines(self._episode(episode))
         ]
 
     def _split_words(self, text: str) -> list[dict]:
@@ -600,7 +601,7 @@ class Toolbox:
 
     def _report_topics(self, episode: str, topics: list[dict]) -> dict:
         key = episode_key(self._media_root, episode)
-        lines = read_lines(subtitle_file(self._episode(episode)))
+        lines = episode_lines(self._episode(episode))
         with (
             closing(Curriculum(self._db_path)) as curriculum,
             closing(ExerciseStock(self._db_path)) as stock,
