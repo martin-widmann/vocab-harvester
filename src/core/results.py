@@ -14,6 +14,7 @@ from typing import Protocol
 
 from core.curriculum import Curriculum, TopicState
 from core.grammar_topics import GAP, ExerciseKind
+from core.learner_summary import LearnerSummary
 from core.lesson import ARTICLE_KIND, ARTICLES, OPEN_KINDS, LessonFiles
 from core.vocab_store import Teaching, VocabStore, WordState
 
@@ -172,9 +173,10 @@ def finish_lesson(
     *,
     store: VocabStore,
     curriculum: Curriculum,
+    summary: LearnerSummary,
     today: date,
 ) -> Finished:
-    """Finish a Lesson: update the learner state at once.
+    """Finish a Lesson: update the learner state at once, and the learner summary.
 
     Each Unknown word of the Lesson becomes a Taught word, with the Seen
     form, meaning and gender from the Lesson file for its reviews; its first
@@ -182,7 +184,7 @@ def finish_lesson(
     becomes Seen (if it was Not seen), and Learned when its Lesson exercises
     passed; a topic further on keeps its state. A topic that left the
     Curriculum since the Lesson was written is left out. A Lesson is
-    finished only once.
+    finished only once. Then the learner summary is made again.
     """
     with _RESULTS_LOCK:
         lesson = lessons.read(number)
@@ -234,6 +236,9 @@ def finish_lesson(
         # only moves a word or a topic forward.
         results["finished"] = True
         lessons.write_results(results)
+        summary.regenerate(
+            store=store, curriculum=curriculum, lessons=lessons, today=today
+        )
     return Finished(number, taught, topics)
 
 

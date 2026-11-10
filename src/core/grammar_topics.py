@@ -255,6 +255,14 @@ class ExerciseStock:
         )
         return [row[0] for row in rows]
 
+    def review_results(self, day: date) -> list[bool]:
+        """The results of the grammar reviews on a review day: right or wrong."""
+        rows = self._db.execute(
+            "SELECT right FROM grammar_reviews WHERE day = ? ORDER BY reviewed_at",
+            (day.isoformat(),),
+        )
+        return [bool(row[0]) for row in rows]
+
     def last_reviewed(self, topic_id: str) -> date | None:
         """The review day of the topic's latest grammar review; None if it has none."""
         row = self._db.execute(

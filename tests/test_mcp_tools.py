@@ -1,15 +1,18 @@
 import shutil
 from contextlib import closing
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
-from fakes import FakeClock, FakeLanguageTool
+from fakes import FakeClock, FakeDateClock, FakeLanguageTool
 
 from core import (
     Curriculum,
     ExerciseStock,
     FoundTopic,
+    LearnerSummary,
     LessonFiles,
+    Teaching,
     VocabStore,
     WordState,
     build_frequency_table,
@@ -36,6 +39,10 @@ class FakePage:
     def open(self, episode: str) -> str:
         self.opened.append(episode)
         return f"http://127.0.0.1:8000/?episode={episode}"
+
+    def open_review(self) -> str:
+        self.opened.append("#review")
+        return "http://127.0.0.1:8000/#review"
 
 
 @pytest.fixture
@@ -82,7 +89,11 @@ def toolbox(media, db, page, facts, frequency, language_tool):
         frequency_path=frequency,
         language_tool=language_tool,
         clock=FakeClock(),
+        review_clock=FakeDateClock(NOW),
     )
+
+
+NOW = datetime(2026, 11, 10, 8, 0, tzinfo=timezone.utc)
 
 
 def test_new_words_tool_lists_the_new_words_of_an_episode_by_name(toolbox, db):
@@ -887,3 +898,64 @@ def test_the_lesson_flow_runs_from_the_episode_name_to_the_tagged_subtitles(
         failed["base_form"]
         for failed in toolbox.call("failed_sentences", {"episode": episode})
     ] == ["Höhle"]
+
+
+def test_mark_unknown_tool_makes_a_known_word_an_unknown_word(toolbox, db):
+    with closing(VocabStore(db)) as store:
+        store.add("Höhle", "NOUN", WordState.KNOWN)
+
+    assert toolbox.call("mark_unknown", {"base_form": "Höhle"}) == {
+        "base_form": "Höhle", "state": "Unknown",
+    }
+    assert toolbox.call("vocab_lookup", {"base_forms": ["Höhle"]}) == {"Höhle": "Unknown"}
+
+
+def test_mark_unknown_tool_rejects_a_word_that_is_not_known(toolbox, db):
+    with closing(VocabStore(db)) as store:
+        store.add("Höhle", "NOUN", WordState.TAUGHT)
+
+    with pytest.raises(ToolError, match="Taught word"):
+        toolbox.call("mark_unknown", {"base_form": "Höhle"})
+    with pytest.raises(ToolError, match="not in the vocab store"):
+        toolbox.call("mark_unknown", {"base_form": "höhle"})
+
+
+def test_learner_summary_tool_reads_the_summary_the_last_finish_made(toolbox, db):
+    with closing(VocabStore(db)) as store, closing(Curriculum(db)) as curriculum:
+        store.add("gehen", "VERB", WordState.KNOWN)
+        LearnerSummary.next_to(db).regenerate(
+            store=store, curriculum=curriculum, lessons=LessonFiles.next_to(db),
+            today=date(2026, 11, 1),
+        )
+        store.add("sehen", "VERB", WordState.KNOWN)
+
+    summary = toolbox.call("learner_summary", {})["summary"]
+
+    assert "Made on 2026-11-01" in summary
+    assert "Known words: 1" in summary
+
+
+def test_learner_summary_tool_makes_the_first_summary_when_there_is_none(toolbox, db):
+    with closing(VocabStore(db)) as store:
+        store.add("gehen", "VERB", WordState.KNOWN)
+
+    summary = toolbox.call("learner_summary", {})["summary"]
+
+    assert "Made on 2026-11-10" in summary
+    assert "Known words: 1" in summary
+    assert LearnerSummary.next_to(db).read() == summary
+
+
+def test_open_review_tool_opens_the_review_tab_and_counts_what_is_due(toolbox, db, page):
+    with closing(VocabStore(db)) as store:
+        store.add("aufgeben", "VERB", WordState.UNKNOWN)
+        store.add_example_sentence("aufgeben", 1, "Er gibt nie auf.")
+        store.teach("aufgeben", Teaching("Dark/S01E01", date(2026, 11, 9), "gab auf",
+                                         "to give up", None))
+
+    result = toolbox.call("open_review", {})
+
+    assert result == {
+        "url": "http://127.0.0.1:8000/#review", "vocab_due": 1, "grammar_due": 0,
+    }
+    assert page.opened == ["#review"]

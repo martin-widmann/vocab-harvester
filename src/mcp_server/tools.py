@@ -14,6 +14,7 @@ from core import (
     FoundTopic,
     FrequencyTable,
     GrammarPart,
+    LearnerSummary,
     LessonExercise,
     LessonFiles,
     LessonWord,
@@ -21,6 +22,7 @@ from core import (
     OpenKind,
     SentenceChecker,
     SentenceToStore,
+    SystemDateClock,
     Topic,
     TopicStatus,
     VocabStore,
@@ -29,11 +31,14 @@ from core import (
     add_sentences,
     analyse,
     curriculum_gaps,
+    due_cards,
+    due_grammar,
     episode_key,
     episode_lines,
     failed_sentences,
     find_episode,
     lesson_base_forms,
+    mark_unknown,
     match_episode,
     new_words,
     pick_lesson_words,
@@ -44,6 +49,7 @@ from core import (
 )
 from core.frequency import DEFAULT_FREQUENCY
 from core.language_tool import LanguageTool, SystemClock
+from core.review import Clock as ReviewClock
 from core.sentences import Clock, LanguageToolApi
 from core.word_facts import DEFAULT_FACTS
 from web.launch import PageError
@@ -149,6 +155,9 @@ class Page(Protocol):
     def open(self, episode: str) -> str:
         """Open the exercise page of an Episode; give its URL."""
 
+    def open_review(self) -> str:
+        """Open the exercise page on its Review tab; give its URL."""
+
 
 class ToolError(Exception):
     """A tool call that cannot be done, for example an unknown Episode."""
@@ -212,6 +221,7 @@ class Toolbox:
         frequency_path: Path | str = DEFAULT_FREQUENCY,
         language_tool: LanguageToolApi | None = None,
         clock: Clock | None = None,
+        review_clock: ReviewClock | None = None,
     ):
         self._media_root = Path(media_root)
         self._db_path = Path(db_path)
@@ -219,6 +229,8 @@ class Toolbox:
         self._frequency_path = Path(frequency_path)
         self._page = page
         self._clock = clock or SystemClock()
+        # The review day: the date of the learner's own clock.
+        self._review_clock = review_clock or SystemDateClock()
         # One checker for the whole session, so the rate limit holds across calls.
         self._checker = SentenceChecker(language_tool or LanguageTool(), self._clock)
         self.tools = {
@@ -541,6 +553,46 @@ class Toolbox:
                     {"episode": _EPISODE},
                     self._open_page,
                 ),
+                Tool(
+                    "open_review",
+                    "Start the web server if it is not running and open the "
+                    "exercise page in the browser, on its Review tab: the due "
+                    "vocab cards (FSRS schedule, at most 50 a day) and the due "
+                    "grammar exercises (at most 5 a day). The result gives the "
+                    "URL and how many vocab cards and grammar exercises are "
+                    "due now. The learner grades on the page and presses "
+                    "Finish there at the end; Finish makes the learner summary "
+                    "again.",
+                    {},
+                    self._open_review,
+                ),
+                Tool(
+                    "learner_summary",
+                    "Give the learner summary: a short text of the learner "
+                    "state (word counts, recent vocab mistakes, Topic states "
+                    "and Weak points, Lessons). Each Finish of a Lesson or of "
+                    "a review session makes it again; the first call makes it "
+                    "if there is none yet. Read it at the start of each "
+                    "session, instead of the full history.",
+                    {},
+                    self._learner_summary,
+                ),
+                Tool(
+                    "mark_unknown",
+                    "Make a Known word an Unknown word, when the learner says "
+                    "they do not know it. It then waits, as every Unknown word, "
+                    "for the Lesson of an Episode where it appears. Only a "
+                    "Known word changes. Give the Base form exactly as "
+                    "vocab_lookup knows it (a noun starts with a capital "
+                    "letter).",
+                    {
+                        "base_form": {
+                            "type": "string",
+                            "description": 'The Base form, for example "aufgeben".',
+                        }
+                    },
+                    self._mark_unknown,
+                ),
             ]
         }
 
@@ -731,6 +783,40 @@ class Toolbox:
 
     def _open_page(self, episode: str) -> dict:
         return {"url": self._page.open(episode)}
+
+    def _open_review(self) -> dict:
+        url = self._page.open_review()
+        with (
+            closing(VocabStore(self._db_path)) as store,
+            closing(Curriculum(self._db_path)) as curriculum,
+            closing(ExerciseStock(self._db_path)) as stock,
+        ):
+            return {
+                "url": url,
+                "vocab_due": len(due_cards(store, self._review_clock)),
+                "grammar_due": len(due_grammar(curriculum, stock, self._review_clock)),
+            }
+
+    def _learner_summary(self) -> dict:
+        summary = LearnerSummary.next_to(self._db_path)
+        text = summary.read()
+        if text is None:
+            with (
+                closing(VocabStore(self._db_path)) as store,
+                closing(Curriculum(self._db_path)) as curriculum,
+            ):
+                text = summary.regenerate(
+                    store=store,
+                    curriculum=curriculum,
+                    lessons=LessonFiles.next_to(self._db_path),
+                    today=self._review_clock.now().date(),
+                )
+        return {"summary": text}
+
+    def _mark_unknown(self, base_form: str) -> dict:
+        with closing(VocabStore(self._db_path)) as store:
+            state = mark_unknown(store, base_form)
+        return {"base_form": base_form, "state": state.value}
 
 
 def _line(line: Line) -> dict:

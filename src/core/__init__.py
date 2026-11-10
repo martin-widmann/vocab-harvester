@@ -50,6 +50,7 @@ from core.lesson import (
     lesson_base_forms,
     write_lesson,
 )
+from core.learner_summary import LearnerSummary
 from core.lesson_words import LessonWord, pick_lesson_words
 from core.results import Finished, Result, TopicResult, check_answer, finish_lesson, lesson_for_page
 from core.review import (
@@ -59,6 +60,7 @@ from core.review import (
     due_cards,
     grade_card,
 )
+from core.review_session import ReviewDay, finish_review
 from core.sentences import (
     Issue,
     LanguageToolBusy,
@@ -73,7 +75,13 @@ from core.subtitles import Line, SubtitleError, extract_subtitles, read_lines
 from core.tagged_subtitles import tag_subtitles, tagged_subtitles_path
 from core.vocab_store import EpisodeLine, Teaching, VocabStore, WordState
 from core.word_analysis import Word, analyse
-from core.word_check import CHECK_KEYS, CheckProgress, record_answer, wait_for_check
+from core.word_check import (
+    CHECK_KEYS,
+    CheckProgress,
+    mark_unknown,
+    record_answer,
+    wait_for_check,
+)
 from core.word_facts import Facts, WordFacts, import_word_facts
 
 __all__ = [
@@ -87,6 +95,7 @@ __all__ = [
     "answer_grammar",
     "due_grammar",
     "ReviewCard",
+    "ReviewDay",
     "SystemDateClock",
     "Teaching",
     "due_cards",
@@ -108,6 +117,7 @@ __all__ = [
     "GrammarPart",
     "Issue",
     "LanguageToolBusy",
+    "LearnerSummary",
     "LessonExercise",
     "LessonFiles",
     "LessonGrammar",
@@ -147,9 +157,11 @@ __all__ = [
     "failed_sentences",
     "find_episode",
     "finish_lesson",
+    "finish_review",
     "import_word_facts",
     "lesson_base_forms",
     "lesson_for_page",
+    "mark_unknown",
     "match_episode",
     "new_words",
     "pick_lesson_words",

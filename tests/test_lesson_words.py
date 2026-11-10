@@ -8,6 +8,7 @@ from core import (
     VocabStore,
     WordState,
     build_frequency_table,
+    mark_unknown,
     new_words,
     pick_lesson_words,
     record_answer,
@@ -131,3 +132,15 @@ def test_each_word_goes_to_the_section_of_the_first_line_it_is_heard_in(
     }
     assert picked["Haus"].line.number == 1
     assert picked["Haus"].seen_form == "Haus"
+
+
+def test_a_known_word_the_learner_marks_unknown_is_picked_by_a_later_lesson(
+    store, frequency
+):
+    mark(store, DARK / "S01E01", {"Höhle"})
+    assert store.state_of("aufgeben") == WordState.KNOWN
+
+    assert mark_unknown(store, "aufgeben") == WordState.UNKNOWN
+
+    picked = pick_lesson_words(DARK / "S01E02", store, frequency)
+    assert "aufgeben" in base_forms(picked)

@@ -16,6 +16,7 @@ from core import (
     FrequencyTable,
     GrammarPart,
     LessonExercise,
+    LearnerSummary,
     LessonFiles,
     LessonInfo,
     SentenceChecker,
@@ -122,6 +123,11 @@ def language_tool():
 @pytest.fixture
 def checker(language_tool):
     return SentenceChecker(language_tool, FakeClock())
+
+
+@pytest.fixture
+def summary(db):
+    return LearnerSummary.next_to(db)
 
 
 @pytest.fixture
@@ -693,10 +699,12 @@ def test_open_exercises_of_different_kinds_may_have_the_same_task(write):
 
 
 def test_a_finished_lesson_gives_review_cards_with_the_episode_line_and_facts(
-    write, lessons, store, curriculum
+    write, lessons, store, curriculum, summary
 ):
     write()
-    finish_lesson(lessons, 1, store=store, curriculum=curriculum, today=date(2026, 11, 9))
+    finish_lesson(
+        lessons, 1, store=store, curriculum=curriculum, summary=summary, today=date(2026, 11, 9)
+    )
 
     # The day after the Lesson: the Episode is watched.
     cards = {

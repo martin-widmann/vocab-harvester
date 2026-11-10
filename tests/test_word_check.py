@@ -8,6 +8,7 @@ from core import (
     VocabStore,
     WordState,
     new_words,
+    mark_unknown,
     record_answer,
     wait_for_check,
 )
@@ -136,3 +137,25 @@ def test_a_check_with_no_new_words_is_done_at_once(tmp_path):
 
     assert progress == CheckProgress(done=True, checked=0, left=0)
     assert learner.sleeps == []
+
+
+@pytest.mark.parametrize(
+    "state, error",
+    [
+        (WordState.UNKNOWN, "already an Unknown word"),
+        (WordState.TAUGHT, "Taught word"),
+        (WordState.EXCLUDED, "Excluded word"),
+    ],
+)
+def test_only_a_known_word_can_be_marked_unknown(store, state, error):
+    store.add("Höhle", "NOUN", state)
+
+    with pytest.raises(ValueError, match=error):
+        mark_unknown(store, "Höhle")
+    assert store.state_of("Höhle") == state
+
+
+def test_a_word_not_in_the_vocab_store_cannot_be_marked_unknown(store):
+    with pytest.raises(ValueError, match="not in the vocab store"):
+        mark_unknown(store, "Höhle")
+    assert not store.contains("Höhle")

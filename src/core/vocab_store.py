@@ -69,6 +69,16 @@ class ReviewData:
     reviews: int
 
 
+@dataclass(frozen=True)
+class LoggedReview:
+    """One vocab review in the review log. `article_right` is None for a non-noun."""
+
+    base_form: str
+    day: date
+    rating: str
+    article_right: bool | None
+
+
 _STATES = ", ".join(f"'{state.value}'" for state in WordState)
 
 _SCHEMA = f"""
@@ -158,6 +168,11 @@ class VocabStore:
             "SELECT state FROM words WHERE base_form = ?", (base_form,)
         ).fetchone()
         return None if row is None else WordState(row[0])
+
+    def count_by_state(self) -> dict[WordState, int]:
+        """How many Base forms the store holds in each word state."""
+        rows = self._db.execute("SELECT state, COUNT(*) FROM words GROUP BY state")
+        return {WordState(state): count for state, count in rows}
 
     def add_example_sentence(self, base_form: str, number: int, sentence: str) -> None:
         """Store a sentence that passed its check; its failed tries are done with."""
@@ -311,3 +326,20 @@ class VocabStore:
             "SELECT DISTINCT base_form FROM review_log WHERE day = ?", (day.isoformat(),)
         )
         return {base_form for (base_form,) in rows}
+
+    def review_log(self, since: date) -> list[LoggedReview]:
+        """The vocab reviews of the review days from `since` on, oldest first."""
+        rows = self._db.execute(
+            "SELECT base_form, day, rating, article_right FROM review_log "
+            "WHERE day >= ? ORDER BY reviewed_at, rowid",
+            (since.isoformat(),),
+        )
+        return [
+            LoggedReview(
+                base_form,
+                date.fromisoformat(day),
+                rating,
+                None if article_right is None else bool(article_right),
+            )
+            for base_form, day, rating, article_right in rows
+        ]

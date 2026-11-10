@@ -66,3 +66,26 @@ def wait_for_check(
         clock.sleep(min(interval, deadline - clock.now()))
         left = [word for word in left if not store.contains(word.base_form)]
     return CheckProgress(done=not left, checked=count_before - len(left), left=len(left))
+
+
+def mark_unknown(store: VocabStore, base_form: str) -> WordState:
+    """Make a Known word an Unknown word: the learner says they do not know it.
+
+    It then waits, as every Unknown word, for the Lesson of an Episode where
+    it appears. Only a Known word changes; any other word is rejected.
+    """
+    state = store.state_of(base_form)
+    if state is None:
+        raise ValueError(
+            f"{base_form!r} is not in the vocab store. Give the Base form as "
+            "vocab_lookup knows it (a noun starts with a capital letter); a word "
+            "that is not in the store comes as a New word in a Word Knowledge Check"
+        )
+    if state == WordState.UNKNOWN:
+        raise ValueError(f"{base_form!r} is already an Unknown word")
+    if state == WordState.TAUGHT:
+        raise ValueError(f"{base_form!r} is a Taught word: it already gets reviews")
+    if state == WordState.EXCLUDED:
+        raise ValueError(f"{base_form!r} is an Excluded word, not vocabulary")
+    store.set_state(base_form, WordState.UNKNOWN)
+    return WordState.UNKNOWN
