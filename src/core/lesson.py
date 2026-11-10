@@ -227,6 +227,28 @@ def _load(path: Path) -> dict:
     return lesson
 
 
+def lesson_base_forms(
+    lessons: LessonFiles,
+    episode: str,
+    episode_folder: Episode | Path | str,
+    store: VocabStore,
+    frequency: FrequencyTable,
+) -> set[str]:
+    """The Base forms the Lesson of an Episode teaches or will teach.
+
+    These are the words in its Lesson file, if it has one, and the words
+    pick_lesson_words picks now. So the words stay in the set after Finish
+    makes them Taught words, and before the Lesson file is written.
+    """
+    picked = {word.base_form for word in pick_lesson_words(episode_folder, store, frequency)}
+    lesson = lessons.of_episode(episode)
+    if lesson is None:
+        return picked
+    return picked | {
+        word["base_form"] for section in lesson["sections"] for word in section["words"]
+    }
+
+
 def write_lesson(
     lessons: LessonFiles,
     episode: str,

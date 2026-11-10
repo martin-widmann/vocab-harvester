@@ -879,3 +879,11 @@ def test_the_lesson_flow_runs_from_the_episode_name_to_the_tagged_subtitles(
         (failed["base_form"], failed["number"], failed["status"])
         for failed in toolbox.call("failed_sentences", {"episode": episode})
     ] == [("Höhle", 3, "listed")]
+    # After Finish the words are Taught words; the list still holds the sentence.
+    with closing(VocabStore(db)) as store:
+        for word in unknown:
+            store.set_state(word, WordState.TAUGHT)
+    assert [
+        failed["base_form"]
+        for failed in toolbox.call("failed_sentences", {"episode": episode})
+    ] == ["Höhle"]

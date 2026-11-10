@@ -16,6 +16,7 @@ from core import (
     GrammarPart,
     LessonExercise,
     LessonFiles,
+    LessonWord,
     Line,
     OpenKind,
     SentenceChecker,
@@ -32,6 +33,7 @@ from core import (
     episode_lines,
     failed_sentences,
     find_episode,
+    lesson_base_forms,
     match_episode,
     new_words,
     pick_lesson_words,
@@ -279,8 +281,8 @@ class Toolbox:
                     "wait_for_check",
                     "Wait while the learner does the Word Knowledge Check of "
                     "an Episode on the Check tab. It returns when every New "
-                    "word is marked (done is true), or after 5 minutes with "
-                    "done false: then call it again. checked counts the words "
+                    "word is marked (done is true), or after about 50 seconds "
+                    "with done false: then call it again. checked counts the words "
                     "marked during this wait, left the New words not marked yet.",
                     {"episode": _EPISODE},
                     self._wait_for_check,
@@ -557,7 +559,7 @@ class Toolbox:
 
     def _find_episode(self, name: str) -> dict:
         key = match_episode(self._media_root, name)
-        self._episode(key)
+        self._episode(key)  # The folder must hold an Episode that the tools can read.
         lesson = LessonFiles.next_to(self._db_path).of_episode(key)
         return {"episode": key, "lesson": lesson and lesson["number"]}
 
@@ -595,11 +597,7 @@ class Toolbox:
             facts.add_meaning(base_form, meaning)
             return asdict(facts.lookup(base_form))
 
-    def _picked(self, episode: str) -> set[str]:
-        """The Base forms the Lesson of an Episode picks."""
-        return {word.base_form for word in self._lesson_words(episode)}
-
-    def _lesson_words(self, episode: str) -> list:
+    def _lesson_words(self, episode: str) -> list[LessonWord]:
         folder = self._episode(episode)
         with (
             closing(FrequencyTable(self._frequency_path)) as frequency,
@@ -622,7 +620,7 @@ class Toolbox:
         ]
 
     def _add_sentences(self, episode: str, sentences: list[dict]) -> list[dict]:
-        picked = self._picked(episode)
+        picked = {word.base_form for word in self._lesson_words(episode)}
         with closing(VocabStore(self._db_path)) as store:
             results = add_sentences(
                 store,
@@ -633,9 +631,16 @@ class Toolbox:
         return [asdict(result) for result in results]
 
     def _failed_sentences(self, episode: str) -> list[dict]:
-        picked = self._picked(episode)
-        with closing(VocabStore(self._db_path)) as store:
-            return [asdict(failed) for failed in failed_sentences(store, picked)]
+        key = episode_key(self._media_root, episode)
+        with (
+            closing(FrequencyTable(self._frequency_path)) as frequency,
+            closing(VocabStore(self._db_path)) as store,
+        ):
+            words = lesson_base_forms(
+                LessonFiles.next_to(self._db_path), key, self._episode(episode),
+                store, frequency,
+            )
+            return [asdict(failed) for failed in failed_sentences(store, words)]
 
     def _curriculum(self) -> dict:
         with closing(Curriculum(self._db_path)) as curriculum:

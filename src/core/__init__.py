@@ -47,6 +47,7 @@ from core.lesson import (
     LessonFiles,
     LessonInfo,
     OpenKind,
+    lesson_base_forms,
     write_lesson,
 )
 from core.lesson_words import LessonWord, pick_lesson_words
@@ -147,6 +148,7 @@ __all__ = [
     "find_episode",
     "finish_lesson",
     "import_word_facts",
+    "lesson_base_forms",
     "lesson_for_page",
     "match_episode",
     "new_words",

@@ -78,3 +78,24 @@ def test_a_series_without_an_episode_code_names_its_episodes():
 def test_a_name_that_is_no_episode_is_rejected(request_text):
     with pytest.raises(ValueError):
         match_episode(MEDIA, request_text)
+
+
+@pytest.mark.parametrize(
+    "request_text", ["Dark - S01E02", "Dark, S01E02", "Dark_S01E02", "Dark S01E02."]
+)
+def test_punctuation_between_the_name_and_the_code_is_ignored(request_text):
+    assert match_episode(MEDIA, request_text) == "Dark/S01E02"
+
+
+def test_an_episode_folder_may_have_a_title_after_its_code(tmp_path):
+    (tmp_path / "Tatort" / "S01E03 - Der Fall").mkdir(parents=True)
+
+    assert match_episode(tmp_path, "Tatort S01E03") == "Tatort/S01E03 - Der Fall"
+
+
+def test_two_folders_for_the_same_episode_are_rejected(tmp_path):
+    (tmp_path / "Tatort" / "S01E03").mkdir(parents=True)
+    (tmp_path / "Tatort" / "S1E3").mkdir()
+
+    with pytest.raises(ValueError, match="more than one folder"):
+        match_episode(tmp_path, "Tatort S01E03")

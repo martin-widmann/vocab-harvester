@@ -16,7 +16,7 @@ You can act only through the tools of the german-media-learning MCP server, and 
 
 - `find_episode`: find an Episode from how the learner names it ("Dark S01E03"). It gives the Episode name for all other tools ("Dark/S01E03"), and the number of its Lesson if it has one.
 - `new_words`: process an Episode and list its New words, in the order they are first heard.
-- `wait_for_check`: wait while the learner does the Word Knowledge Check on the Check tab. It returns when every New word is marked, or after 5 minutes with the number of words left.
+- `wait_for_check`: wait while the learner does the Word Knowledge Check on the Check tab. It returns when every New word is marked, or after about 50 seconds with the number of words left.
 - `parse_subtitles`: read the Lines of an Episode, with start and end in seconds.
 - `split_words`: reduce the text of one Line to Base form, word type and Seen form.
 - `vocab_lookup`: give the word state of Base forms (Known, Unknown, Taught, Excluded, or null).
@@ -33,11 +33,9 @@ The topic-finder finds the Grammar topics of an Episode and fills the exercise s
 
 An Episode name is the folder under the media folder: `<Series>/S<nn>E<nn>`, for example `Dark/S01E03`. A film is two or three Episodes, P1, P2 and maybe P3, each a time range of the one video. Its Episode name is `<Film>/P<n>`, for example `Der Untergang/P2`. Always get the Episode name from `find_episode`; do not guess it. If the learner names only the film, ask which Episode: P1, P2 or P3.
 
-## The lesson of an Episode
+## The Lesson of an Episode
 
-When the learner types /lesson, or asks for the lesson of an Episode (for example "Make the lesson for Dark S01E03"), follow the lesson skill. It runs the whole flow from that one request: find the Episode, process it, open the Check tab, wait for the Word Knowledge Check, pick the words, the sentences, the Grammar topics, the Lesson and the Tags, and at the end the sentences that failed LanguageTool.
-
-If the learner says the check is done while `wait_for_check` still gives words left, tell the learner how many words are left on the Check tab.
+When the learner types /lesson, or asks for the Lesson of an Episode (for example "Make the lesson for Dark S01E03"), follow the lesson skill. It runs the whole flow from that one request: find the Episode, process it, open the Check tab, wait for the Word Knowledge Check, pick the words, the sentences, the Grammar topics, the Lesson and the Tags, and at the end the sentences that failed LanguageTool.
 
 ## The Curriculum
 

@@ -2,9 +2,9 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
 from core.episode import Episode, NewWord, new_words
+from core.sentences import Clock
 from core.vocab_store import VocabStore, WordState
 
 CHECK_KEYS = {
@@ -13,21 +13,15 @@ CHECK_KEYS = {
     "X": WordState.EXCLUDED,
 }
 
-WAIT_TIMEOUT = 300.0  # seconds one wait may take
+# Seconds one wait may take. It stays under the 60 seconds an MCP client
+# may give a tool call; the tutor calls again while words are left.
+WAIT_TIMEOUT = 50.0
 WAIT_INTERVAL = 2.0  # seconds between two looks at the vocab store
-
-
-class Clock(Protocol):
-    def now(self) -> float:
-        """Seconds, from any fixed point."""
-
-    def sleep(self, seconds: float) -> None:
-        """Wait."""
 
 
 @dataclass(frozen=True)
 class CheckProgress:
-    """How far the learner is with the check of an Episode.
+    """How far the learner is with the Word Knowledge Check of an Episode.
 
     `checked` counts the New words the learner marked during the wait, `left`
     the New words not marked yet. `done` is True when no New word is left.
@@ -66,9 +60,9 @@ def wait_for_check(
     word is left, or after `timeout` seconds with the words still left.
     """
     left = new_words(episode, store)
-    start = len(left)
+    count_before = len(left)
     deadline = clock.now() + timeout
     while left and clock.now() < deadline:
         clock.sleep(min(interval, deadline - clock.now()))
         left = [word for word in left if not store.contains(word.base_form)]
-    return CheckProgress(done=not left, checked=start - len(left), left=len(left))
+    return CheckProgress(done=not left, checked=count_before - len(left), left=len(left))

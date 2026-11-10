@@ -183,24 +183,17 @@ def find_episode(media_root: Path | str, name: str) -> Episode:
 def match_episode(media_root: Path | str, request: str) -> str:
     """The Episode name of the media folder, from how the learner names it.
 
-    "Dark S01E03", "dark s1e3" and "Dark/S01E03" all give "Dark/S01E03" (or
-    "Dark/S1E3" if that is the folder). "Der Film P2" gives "Der Film/P2". The
-    series or film name is matched without case. ValueError, with the names
-    that do exist, if there is no such Episode.
+    "Dark S01E03", "dark s1e3", "Dark - S01E03" and "Dark/S01E03" all give
+    "Dark/S01E03" (or "Dark/S1E3", or "Dark/S01E03 - Title", if that is the
+    folder). "Der Film P2" gives "Der Film/P2". The series or film name is
+    matched without case. ValueError, with the names that do exist, if there
+    is no such Episode or more than one folder fits.
     """
     root = Path(media_root).resolve()
     text = " ".join(request.replace("\\", "/").split())
     match = _REQUEST.fullmatch(text)
     title, code = (match.group("title"), match.group("code")) if match else (text, None)
-    title = title.strip(" /")
-    folders = _subfolders(root)
-    found = [folder for folder in folders if folder.name.casefold() == title.casefold()]
-    if not title or not found:
-        names = ", ".join(sorted(folder.name for folder in folders)) or "none"
-        raise ValueError(
-            f"No series or film {title!r} in the media folder {root}; it has: {names}"
-        )
-    folder = found[0]
+    folder = _title_folder(root, title.strip(_PUNCTUATION))
     if (folder / FILM_FILE).is_file():
         episodes = film_episodes(folder)
         if code is None or code.upper() not in episodes:
@@ -209,27 +202,53 @@ def match_episode(media_root: Path | str, request: str) -> str:
                 f"({', '.join(episodes)}), for example {folder.name}/P1"
             )
         return f"{folder.name}/{code.upper()}"
-    episodes = {
-        _code(sub.name): sub.name for sub in _subfolders(folder) if _code(sub.name)
-    }
-    wanted = _code(code) if code else None
-    if wanted is None or wanted not in episodes:
-        names = ", ".join(sorted(episodes.values())) or "none"
+    wanted = _season_episode(code) if code else None
+    episodes = [sub.name for sub in _subfolders(folder) if _season_episode(sub.name)]
+    found = [name for name in episodes if _season_episode(name) == wanted]
+    if wanted is None or not found:
         raise ValueError(
-            f"No Episode {request.strip()!r}: the Episodes of {folder.name} are {names}"
+            f"No Episode {request.strip()!r}: the Episodes of {folder.name} are "
+            f"{', '.join(sorted(episodes)) or 'none'}"
         )
-    return f"{folder.name}/{episodes[wanted]}"
+    if len(found) > 1:
+        raise ValueError(
+            f"{folder.name} has more than one folder for {code}: "
+            f"{', '.join(sorted(found))}; keep one"
+        )
+    return f"{folder.name}/{found[0]}"
 
 
+_PUNCTUATION = " /_,:;.-!?"
 _REQUEST = re.compile(
-    r"(?P<title>.+?)[ /]+(?P<code>S\d{1,2} ?E\d{1,3}|P\d)", re.IGNORECASE
+    r"(?P<title>.+?)[\s/_,:;.\-]+(?P<code>S\d{1,2} ?E\d{1,3}|P\d)[\s.,!?]*",
+    re.IGNORECASE,
 )
-_SERIES_CODE = re.compile(r"S(\d{1,2}) ?E(\d{1,3})", re.IGNORECASE)
+# A series Episode folder starts with its code; a title may follow.
+_SERIES_CODE = re.compile(r"S(\d{1,2}) ?E(\d{1,3})(?!\d)", re.IGNORECASE)
 
 
-def _code(name: str) -> tuple[int, int] | None:
-    """Season and episode number of a code such as "S01E03" or "s1e3"."""
-    match = _SERIES_CODE.fullmatch(name)
+def _title_folder(root: Path, title: str) -> Path:
+    """The series or film folder of a name: the same name, else without case."""
+    folders = _subfolders(root)
+    found = [folder for folder in folders if folder.name == title] or [
+        folder for folder in folders if folder.name.casefold() == title.casefold()
+    ]
+    if not title or not found:
+        names = ", ".join(sorted(folder.name for folder in folders)) or "none"
+        raise ValueError(
+            f"No series or film {title!r} in the media folder {root}; it has: {names}"
+        )
+    if len(found) > 1:
+        raise ValueError(
+            f"More than one folder fits {title!r}: "
+            f"{', '.join(sorted(folder.name for folder in found))}; write the name exactly"
+        )
+    return found[0]
+
+
+def _season_episode(name: str) -> tuple[int, int] | None:
+    """Season and episode number of a code such as "S01E03", "s1e3" or "S01E03 - Title"."""
+    match = _SERIES_CODE.match(name)
     return (int(match.group(1)), int(match.group(2))) if match else None
 
 
