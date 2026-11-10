@@ -710,3 +710,25 @@ def test_a_finished_lesson_gives_review_cards_with_the_episode_line_and_facts(
     hoehle = cards["Höhle"]
     assert hoehle.context == "Die Polizei sucht den Jungen in der **Höhle**."
     assert hoehle.needs_article is True
+
+
+def test_writing_the_lesson_also_writes_its_tagged_subtitles(write, folder):
+    write()
+
+    tagged = [line.text for line in read_lines(folder / "episode.de.tagged.srt")]
+    assert tagged[1] == "Martha hilft dem alten Mann im Garten. [helfen] [Dativ]"
+    assert tagged[2] == "Er gab nicht auf. [aufgeben]"
+    assert tagged[3].endswith("[Passiv mit Modalverb]")
+
+
+def test_a_lesson_whose_tagged_subtitles_cannot_be_named_is_not_written(
+    write, folder, lessons
+):
+    (folder / "episode.mkv").write_bytes(b"")
+    (folder / "episode.mp4").write_bytes(b"")
+
+    with pytest.raises(ValueError, match="one video"):
+        write()
+
+    assert lessons.lessons() == []
+    assert not list(folder.glob("*.tagged.srt"))

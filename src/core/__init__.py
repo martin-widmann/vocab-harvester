@@ -60,6 +60,7 @@ from core.sentences import (
     failed_sentences,
 )
 from core.subtitles import Line, SubtitleError, extract_subtitles, read_lines
+from core.tagged_subtitles import tag_subtitles, tagged_subtitles_path
 from core.vocab_store import EpisodeLine, Teaching, VocabStore, WordState
 from core.word_analysis import Word, analyse
 from core.word_check import CHECK_KEYS, record_answer
@@ -141,5 +142,7 @@ __all__ = [
     "record_answer",
     "report_topics",
     "subtitle_file",
+    "tag_subtitles",
+    "tagged_subtitles_path",
     "write_lesson",
 ]
