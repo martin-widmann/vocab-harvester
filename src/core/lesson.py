@@ -252,11 +252,11 @@ def write_lesson(
     The tagged .srt of the Lesson is written next to the video (see
     tag_subtitles).
     """
-    episode_folder = as_episode(episode_folder)
-    tagged_subtitles_path(episode_folder)  # A folder it cannot name is rejected now.
-    lines = episode_lines(episode_folder)
+    watched = as_episode(episode_folder)
+    tagged_subtitles_path(watched)  # A folder it cannot name is rejected now.
+    lines = episode_lines(watched)
     # The spoiler checks look at the whole film, not only at this Episode.
-    film_lines = read_lines(subtitle_file(episode_folder))
+    film_lines = read_lines(subtitle_file(watched))
     topics = _checked_grammar(
         episode, lines, film_lines, stock, curriculum, facts, grammar
     )
@@ -271,7 +271,7 @@ def write_lesson(
             )
     words = []
     if previous is None:
-        words = pick_lesson_words(episode_folder, store, frequency)
+        words = pick_lesson_words(watched, store, frequency)
         _check_sentences_stored(store, words)
     _check_with_language_tool(checker, topics)
 
@@ -299,7 +299,7 @@ def write_lesson(
             section["words"] = old["words"]
     by_number = {line.number: line for line in lines}
     for topic in sorted(topics, key=_taught_at):
-        section = section_of(by_number[_taught_at(topic)], episode_folder.start)
+        section = section_of(by_number[_taught_at(topic)], watched.start)
         sections[section - 1]["grammar"].append(topic)
     lesson = {
         "schema_version": SCHEMA_VERSION,
@@ -308,7 +308,7 @@ def write_lesson(
         "sections": sections,
     }
     # The tagged .srt first: if it cannot be written, no Lesson file is written.
-    tag_subtitles(lesson, episode_folder)
+    tag_subtitles(lesson, watched)
     lessons._write(lesson)
     return lesson
 
@@ -394,7 +394,7 @@ def _checked_grammar(
             used = sorted(found for found in episode_names if _has_word(text, found))
             if used:
                 raise ValueError(
-                    f"{name}: {text!r} uses names from the Episode "
+                    f"{name}: {text!r} uses names from the Episode or its film "
                     f"({', '.join(used)}); change them so the Lesson does not "
                     "spoil the plot"
                 )
@@ -406,7 +406,7 @@ def _checked_grammar(
         for text in [part.example, *part.cases, *solved_texts]:
             if _plain(text) in episode_texts:
                 raise ValueError(
-                    f"{name}: {text!r} is a Line of the Episode; use a neutral "
+                    f"{name}: {text!r} is a Line of the Episode or its film; use a neutral "
                     "sentence, or set line and cut the Line to the topic part"
                 )
         topics.append(

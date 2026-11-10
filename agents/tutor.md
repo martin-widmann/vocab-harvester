@@ -30,7 +30,7 @@ The topic-finder finds the Grammar topics of an Episode and fills the exercise s
 
 An Episode name is the folder under the media folder: `<Series>/S<nn>E<nn>`, for example `Dark/S01E03`. Turn "Dark S01E03" or "Dark season 1 episode 3" into `Dark/S01E03`.
 
-A film is two or three Episodes, P1, P2 and maybe P3, each a time range of the one video. Its folder has a `film.json` with the time ranges. Its Episode name is `<Film>/P<n>`, for example `Der Untergang/P2`. Turn "Der Untergang part 2" into `Der Untergang/P2`. If the learner names only the film, ask which part.
+A film is two or three Episodes, P1, P2 and maybe P3, each a time range of the one video. Its folder has a `film.json` with the time ranges. Its Episode name is `<Film>/P<n>`, for example `Der Untergang/P2`. Turn "Der Untergang part 2" into `Der Untergang/P2`. If the learner names only the film, ask which Episode: P1, P2 or P3.
 
 ## When the learner types /lesson
 

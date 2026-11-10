@@ -1,7 +1,7 @@
 """Films: a film is two or three Episodes, P1-P3, each a time range of one video.
 
 The film folder holds the video, its .srt and a film.json with the time range
-of each part. The video is never cut: each Episode uses only its own Lines.
+of each Episode. The video is never cut: each Episode uses only its own Lines.
 """
 
 import json
@@ -26,7 +26,7 @@ from core import (
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
-PARTS = {
+RANGES = {
     "P1": {"start": "0:00:00", "end": "0:50:00"},
     "P2": {"start": "0:50:00", "end": "1:40:00"},
     "P3": {"start": "1:40:00", "end": None},
@@ -59,11 +59,11 @@ def _time(at: timedelta) -> str:
     return f"{seconds // 3600:02}:{seconds // 60 % 60:02}:{seconds % 60:02},{milliseconds:03}"
 
 
-def write_film(folder: Path, parts=PARTS, lines=LINES) -> Path:
+def write_film(folder: Path, ranges=RANGES, lines=LINES) -> Path:
     folder.mkdir(parents=True)
     (folder / "Der Film.mkv").write_bytes(b"not a real video")
     (folder / "Der Film.de.srt").write_text(srt(lines), encoding="utf-8")
-    (folder / "film.json").write_text(json.dumps(parts), encoding="utf-8")
+    (folder / "film.json").write_text(json.dumps(ranges), encoding="utf-8")
     return folder
 
 
@@ -98,11 +98,11 @@ def numbers(lines) -> list[int]:
 # Finding a film Episode
 
 
-def test_a_film_episode_is_found_from_the_film_name_and_its_part(media):
+def test_a_film_episode_is_found_from_the_film_name_and_its_code(media):
     episode = find_episode(media, "Der Film/P2")
 
     assert episode.folder == (media / "Der Film").resolve()
-    assert episode.part == "P2"
+    assert episode.code == "P2"
     assert (episode.start, episode.end) == (timedelta(minutes=50), timedelta(minutes=100))
 
 
@@ -111,7 +111,7 @@ def test_a_film_episode_has_one_key_however_its_name_is_written(media, name):
     assert episode_key(media, name) == "Der Film/P2"
 
 
-def test_the_last_part_may_run_to_the_end_of_the_film(media):
+def test_the_last_episode_may_run_to_the_end_of_the_film(media):
     episode = find_episode(media, "Der Film/P3")
 
     assert (episode.start, episode.end) == (timedelta(minutes=100), None)
@@ -122,26 +122,34 @@ def test_a_film_itself_is_not_an_episode(media):
         find_episode(media, "Der Film")
 
 
-def test_a_part_the_film_does_not_define_is_rejected(media):
+def test_an_episode_code_the_film_does_not_define_is_rejected(media):
     with pytest.raises(ValueError):
         find_episode(media, "Der Film/P4")
+
+
+def test_a_folder_named_like_a_film_episode_does_not_hide_its_time_range(media):
+    (media / "Der Film" / "P2").mkdir()
+
+    episode = find_episode(media, "Der Film/P2")
+
+    assert (episode.folder, episode.code) == ((media / "Der Film").resolve(), "P2")
 
 
 def test_a_series_episode_still_covers_its_whole_srt():
     episode = find_episode(FIXTURES, "Dark/S01E01")
 
-    assert episode.part is None
+    assert episode.code is None
     assert numbers(episode_lines(episode)) == numbers(
         read_lines(FIXTURES / "Dark" / "S01E01" / "Dark.S01E01.de.srt")
     )
 
 
 @pytest.mark.parametrize(
-    "parts",
+    "ranges",
     [
-        {"P1": {"start": "0:00:00", "end": "0:50:00"}},  # Only one part.
-        {**PARTS, "P4": {"start": "2:00:00", "end": None}},  # More than 3 parts.
-        {"P1": PARTS["P1"], "P3": PARTS["P3"]},  # A part is missing.
+        {"P1": {"start": "0:00:00", "end": "0:50:00"}},  # Only one Episode.
+        {**RANGES, "P4": {"start": "2:00:00", "end": None}},  # More than 3 Episodes.
+        {"P1": RANGES["P1"], "P3": RANGES["P3"]},  # An Episode is missing.
         {"P1": {"start": "0:00:00", "end": "0:50:00"}, "P2": {"start": "0:40:00", "end": None}},
         {"P1": {"start": "0:30:00", "end": "0:10:00"}, "P2": {"start": "0:50:00", "end": None}},
         {"P1": {"start": "0:00:00", "end": None}, "P2": {"start": "0:50:00", "end": None}},
@@ -151,8 +159,8 @@ def test_a_series_episode_still_covers_its_whole_srt():
         ["P1", "P2"],
     ],
 )
-def test_a_film_file_that_breaks_a_rule_is_rejected(tmp_path, parts):
-    write_film(tmp_path / "media" / "Film", parts=parts)
+def test_a_film_file_that_breaks_a_rule_is_rejected(tmp_path, ranges):
+    write_film(tmp_path / "media" / "Film", ranges=ranges)
 
     with pytest.raises(ValueError):
         find_episode(tmp_path / "media", "Film/P1")

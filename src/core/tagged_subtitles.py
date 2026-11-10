@@ -58,7 +58,8 @@ def tag_subtitles(lesson: dict, episode: Episode | Path | str) -> Path:
     target = tagged_subtitles_path(episode)
     lines = read_lines(subtitle_file(episode))
     tags: dict[int, list[str]] = {line.number: [] for line in lines}
-    taggable = {line.number for line in lines if episode.contains(line)}
+    own = [line for line in lines if episode.contains(line)]
+    taggable = {line.number for line in own}
 
     def add(number: int, tag: str) -> None:
         if number in taggable and tag not in tags[number]:
@@ -68,7 +69,6 @@ def tag_subtitles(lesson: dict, episode: Episode | Path | str) -> Path:
     lines_left = {
         word["base_form"]: TAG_LINES for section in sections for word in section["words"]
     }
-    own = [line for line in lines if line.number in taggable]
     for line, words in zip(own, analyse_all(line.text for line in own)):
         for base_form in dict.fromkeys(word.base_form for word in words):
             if lines_left.get(base_form, 0) > 0:

@@ -18,8 +18,8 @@ from core.word_analysis import analyse
 
 DEFAULT_MEDIA_ROOT = Path(__file__).resolve().parents[2] / "media"
 FILM_FILE = "film.json"
-FILM_PARTS = ("P1", "P2", "P3")
-MIN_FILM_PARTS = 2
+FILM_CODES = ("P1", "P2", "P3")
+MIN_FILM_EPISODES = 2
 
 _TIME = re.compile(r"(\d+):([0-5]\d):([0-5]\d)")
 
@@ -28,20 +28,20 @@ _TIME = re.compile(r"(\d+):([0-5]\d):([0-5]\d)")
 class Episode:
     """One watch unit: a series Episode folder, or a time range of a film.
 
-    A series Episode has no part and covers its whole .srt. A film Episode
-    has its part ("P1"-"P3") and covers the Lines that start at or after
+    A series Episode has no code and covers its whole .srt. A film Episode
+    has its code ("P1"-"P3") and covers the Lines that start at or after
     `start` and before `end`; an `end` of None runs to the end of the film.
     """
 
     folder: Path
-    part: str | None = None
+    code: str | None = None
     start: timedelta = timedelta(0)
     end: timedelta | None = None
 
     @property
     def path(self) -> Path:
-        """The Episode as a path: its folder, or the film folder plus the part."""
-        return self.folder if self.part is None else self.folder / self.part
+        """The Episode as a path: its folder, or the film folder plus its code."""
+        return self.folder if self.code is None else self.folder / self.code
 
     def contains(self, line: Line) -> bool:
         """True if the Line starts in the Episode's time range."""
@@ -60,80 +60,83 @@ def as_episode(episode: "Episode | Path | str") -> Episode:
     """The Episode at a path: a series Episode folder or "<film folder>/P2".
 
     ValueError for a film folder itself (it is not one Episode) and for a
-    part its film.json does not define.
+    code its film.json does not define.
     """
     if isinstance(episode, Episode):
         return episode
     path = Path(episode)
-    if path.is_dir():
-        if (path / FILM_FILE).is_file():
-            parts = ", ".join(film_parts(path))
-            raise ValueError(
-                f"{path.name} is a film, not one Episode: name one of its "
-                f"Episodes ({parts}), for example {path.name}/P1"
-            )
-        return Episode(path)
     film = path.parent
     if film.is_dir() and (film / FILM_FILE).is_file():
-        parts = film_parts(film)
-        part = path.name.upper()
-        if part not in parts:
+        episodes = film_episodes(film)
+        code = path.name.upper()
+        if code not in episodes:
             raise ValueError(
                 f"The film {film.name} has no Episode {path.name!r}: "
-                f"its Episodes are {', '.join(parts)}"
+                f"its Episodes are {', '.join(episodes)}"
             )
-        start, end = parts[part]
-        return Episode(film, part, start, end)
+        return episodes[code]
+    if path.is_dir():
+        if (path / FILM_FILE).is_file():
+            codes = ", ".join(film_episodes(path))
+            raise ValueError(
+                f"{path.name} is a film, not one Episode: name one of its "
+                f"Episodes ({codes}), for example {path.name}/P1"
+            )
+        return Episode(path)
     raise ValueError(f"No Episode folder {path}")
 
 
-def film_parts(film_folder: Path | str) -> dict[str, tuple[timedelta, timedelta | None]]:
-    """The time range of each Episode of a film, from its film.json.
+def film_episodes(film_folder: Path | str) -> dict[str, Episode]:
+    """The Episodes of a film by code, with their time ranges from its film.json.
 
     The file maps P1, P2 and maybe P3, in that order, to {"start": "H:MM:SS",
-    "end": "H:MM:SS"}. Only the last part may have an "end" of null: it runs
-    to the end of the film. The ranges are in order and do not overlap.
-    ValueError if the file breaks a rule.
+    "end": "H:MM:SS"}. Only the last Episode may have an "end" of null: it
+    runs to the end of the film. The ranges are in order and do not overlap;
+    a gap between two ranges (for example an intermission) belongs to no
+    Episode. ValueError if the file breaks a rule.
     """
-    path = Path(film_folder) / FILM_FILE
+    folder = Path(film_folder)
+    path = folder / FILM_FILE
     try:
         content = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"The film file {path} cannot be read: {error}")
+        raise ValueError(f"The film file {path} cannot be read: {error}") from error
     if not isinstance(content, dict):
-        raise ValueError(f"The film file {path} must map each part to its time range")
-    names = list(content)
-    if not MIN_FILM_PARTS <= len(names) <= len(FILM_PARTS) or names != list(
-        FILM_PARTS[: len(names)]
+        raise ValueError(
+            f"The film file {path} must map each Episode code to its time range"
+        )
+    codes = list(content)
+    if not MIN_FILM_EPISODES <= len(codes) <= len(FILM_CODES) or codes != list(
+        FILM_CODES[: len(codes)]
     ):
         raise ValueError(
-            f"The film file {path} must define the parts P1, P2 and maybe P3, "
-            f"in that order; it has {', '.join(names) or 'none'}"
+            f"The film file {path} must define the Episodes P1, P2 and maybe P3, "
+            f"in that order; it has {', '.join(codes) or 'none'}"
         )
-    parts: dict[str, tuple[timedelta, timedelta | None]] = {}
+    episodes: dict[str, Episode] = {}
     previous_end = timedelta(0)
-    for number, name in enumerate(names, start=1):
-        time_range = content[name]
+    for number, code in enumerate(codes, start=1):
+        time_range = content[code]
         if not isinstance(time_range, dict) or set(time_range) != {"start", "end"}:
             raise ValueError(
-                f"The film file {path}: {name} must be "
+                f"The film file {path}: {code} must be "
                 '{"start": "H:MM:SS", "end": "H:MM:SS"}'
             )
-        start = _time(path, name, time_range["start"])
-        if number == len(names) and time_range["end"] is None:
+        start = _time(path, code, time_range["start"])
+        if number == len(codes) and time_range["end"] is None:
             end = None
         else:
-            end = _time(path, name, time_range["end"])
+            end = _time(path, code, time_range["end"])
         if start < previous_end:
             raise ValueError(
-                f"The film file {path}: {name} starts before the part before it ends"
+                f"The film file {path}: {code} starts before the Episode before it ends"
             )
         if end is not None and end <= start:
-            raise ValueError(f"The film file {path}: {name} must end after it starts")
-        parts[name] = (start, end)
+            raise ValueError(f"The film file {path}: {code} must end after it starts")
+        episodes[code] = Episode(folder, code, start, end)
         if end is not None:
             previous_end = end
-    return parts
+    return episodes
 
 
 def _time(path: Path, name: str, value: object) -> timedelta:
