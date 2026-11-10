@@ -113,6 +113,44 @@ def test_parse_subtitles_tool_gives_the_lines_of_an_episode_with_times_in_second
     assert len(lines) == 4
 
 
+@pytest.fixture
+def film(media):
+    """A film whose Episode P2 starts at the third Line of Dark S01E01."""
+    folder = media / "Der Film"
+    shutil.copytree(media / "Dark" / "S01E01", folder)
+    third = read_lines(next(folder.glob("*.srt")))[2].start
+    minutes, seconds = divmod(int(third.total_seconds()), 60)
+    (folder / "film.json").write_text(
+        '{"P1": {"start": "0:00:00", "end": "0:%02d:%02d"},'
+        ' "P2": {"start": "0:%02d:%02d", "end": null}}' % (minutes, seconds, minutes, seconds),
+        encoding="utf-8",
+    )
+    return folder
+
+
+def test_parse_subtitles_tool_gives_only_the_lines_of_a_film_episode(toolbox, film):
+    lines = toolbox.call("parse_subtitles", {"episode": "Der Film/P2"})
+
+    assert [line["number"] for line in lines] == [3, 4]
+
+
+def test_report_topics_tool_with_a_line_of_another_film_episode_is_a_tool_error(
+    toolbox, db, film
+):
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
+
+    with pytest.raises(ToolError, match="no Line 1"):
+        toolbox.call(
+            "report_topics",
+            {"episode": "Der Film/P2", "topics": [{"topic_id": "dativ", "lines": [1]}]},
+        )
+
+
+def test_a_film_itself_is_a_tool_error(toolbox, film):
+    with pytest.raises(ToolError, match="P1"):
+        toolbox.call("new_words", {"episode": "Der Film"})
+
+
 def test_split_words_tool_gives_base_form_word_type_and_seen_form(toolbox):
     words = toolbox.call("split_words", {"text": "Er gab nicht auf."})
 

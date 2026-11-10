@@ -28,7 +28,7 @@ from core.lesson_words import SECTION_COUNT, SECTION_LENGTH, LessonWord, pick_le
 from core.sentences import MAX_RETRIES, SENTENCES_PER_WORD, SentenceChecker
 from core.subtitles import Line, read_lines
 from core.tagged_subtitles import tag_subtitles, tagged_subtitles_path
-from core.episode import subtitle_file
+from core.episode import Episode, as_episode, episode_lines, subtitle_file
 from core.vocab_store import EpisodeLine, VocabStore
 from core.word_analysis import names
 from core.word_facts import WordFacts
@@ -230,7 +230,7 @@ def _load(path: Path) -> dict:
 def write_lesson(
     lessons: LessonFiles,
     episode: str,
-    episode_folder: Path | str,
+    episode_folder: Episode | Path | str,
     *,
     store: VocabStore,
     frequency: FrequencyTable,
@@ -252,9 +252,14 @@ def write_lesson(
     The tagged .srt of the Lesson is written next to the video (see
     tag_subtitles).
     """
+    episode_folder = as_episode(episode_folder)
     tagged_subtitles_path(episode_folder)  # A folder it cannot name is rejected now.
-    lines = read_lines(subtitle_file(episode_folder))
-    topics = _checked_grammar(episode, lines, stock, curriculum, facts, grammar)
+    lines = episode_lines(episode_folder)
+    # The spoiler checks look at the whole film, not only at this Episode.
+    film_lines = read_lines(subtitle_file(episode_folder))
+    topics = _checked_grammar(
+        episode, lines, film_lines, stock, curriculum, facts, grammar
+    )
     previous = lessons.of_episode(episode)
     if previous is not None:
         old = lessons.results(previous["number"])
@@ -294,7 +299,8 @@ def write_lesson(
             section["words"] = old["words"]
     by_number = {line.number: line for line in lines}
     for topic in sorted(topics, key=_taught_at):
-        sections[section_of(by_number[_taught_at(topic)]) - 1]["grammar"].append(topic)
+        section = section_of(by_number[_taught_at(topic)], episode_folder.start)
+        sections[section - 1]["grammar"].append(topic)
     lesson = {
         "schema_version": SCHEMA_VERSION,
         "number": lessons.number_for(episode),
@@ -315,12 +321,17 @@ def _taught_at(topic: dict) -> int:
 def _checked_grammar(
     episode: str,
     lines: list[Line],
+    film_lines: list[Line],
     stock: ExerciseStock,
     curriculum: Curriculum,
     facts: WordFacts,
     grammar: list[GrammarPart],
 ) -> list[dict]:
-    """The Grammar topics of the Lesson file; ValueError if a part breaks a rule."""
+    """The Grammar topics of the Lesson file; ValueError if a part breaks a rule.
+
+    `lines` are the Lines of the Episode; `film_lines` all Lines of its .srt,
+    which for a film are also the Lines of its other Episodes.
+    """
     picks = stock.picked_topics(episode)
     if picks is None:
         raise ValueError(
@@ -345,10 +356,10 @@ def _checked_grammar(
                 )
     episode_names = {
         found
-        for found in names(line.text for line in lines)
+        for found in names(line.text for line in film_lines)
         if not _is_common_noun(facts, found)
     }
-    episode_texts = {_plain(text) for line in lines for text in _texts_of(line)}
+    episode_texts = {_plain(text) for line in film_lines for text in _texts_of(line)}
     seen: set[str] = set()
     topics = []
     for part in grammar:
