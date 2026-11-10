@@ -290,3 +290,37 @@ def test_languagetool_busy_twice_in_a_row_is_an_error(clock):
 
     with pytest.raises(LanguageToolBusy):
         checker.check(["Das ist gut."])
+
+
+def test_sentences_are_taken_only_for_the_words_the_lesson_picked(store, checker):
+    with pytest.raises(ValueError, match="'Höhle' is not a word the Lesson picked"):
+        add_sentences(
+            store,
+            checker,
+            [
+                SentenceToStore("aufgeben", 1, "Er gibt nie auf."),
+                SentenceToStore("Höhle", 1, "Die Höhle ist dunkel."),
+            ],
+            picked={"aufgeben"},
+        )
+
+    assert store.example_sentences("aufgeben") == {}
+
+
+def test_a_picked_word_must_still_be_an_unknown_or_taught_word(store, checker):
+    store.set_state("aufgeben", WordState.KNOWN)
+
+    with pytest.raises(ValueError, match="not an Unknown or Taught word"):
+        add_sentences(
+            store, checker, [SentenceToStore("aufgeben", 1, "Er gibt nie auf.")],
+            picked={"aufgeben"},
+        )
+
+
+def test_the_list_for_the_learner_can_hold_only_the_picked_words(store, checker):
+    add_sentences(store, checker, [SentenceToStore("aufgeben", 1, "falsch")])
+    add_sentences(store, checker, [SentenceToStore("Höhle", 2, "falsch")])
+
+    (failed,) = failed_sentences(store, picked={"Höhle"})
+
+    assert (failed.base_form, failed.number) == ("Höhle", 2)

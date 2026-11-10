@@ -19,6 +19,7 @@ from core.episode import (
     episode_key,
     episode_lines,
     find_episode,
+    match_episode,
     new_words,
     subtitle_file,
 )
@@ -71,11 +72,12 @@ from core.subtitles import Line, SubtitleError, extract_subtitles, read_lines
 from core.tagged_subtitles import tag_subtitles, tagged_subtitles_path
 from core.vocab_store import EpisodeLine, Teaching, VocabStore, WordState
 from core.word_analysis import Word, analyse
-from core.word_check import CHECK_KEYS, record_answer
+from core.word_check import CHECK_KEYS, CheckProgress, record_answer, wait_for_check
 from core.word_facts import Facts, WordFacts, import_word_facts
 
 __all__ = [
     "CHECK_KEYS",
+    "CheckProgress",
     "Episode",
     "EpisodeLine",
     "Graded",
@@ -146,6 +148,7 @@ __all__ = [
     "finish_lesson",
     "import_word_facts",
     "lesson_for_page",
+    "match_episode",
     "new_words",
     "pick_lesson_words",
     "read_lines",
@@ -154,5 +157,6 @@ __all__ = [
     "subtitle_file",
     "tag_subtitles",
     "tagged_subtitles_path",
+    "wait_for_check",
     "write_lesson",
 ]

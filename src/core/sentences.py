@@ -7,7 +7,7 @@ stored. The retry policy lives here, not in the agent.
 
 from bisect import bisect_right
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from enum import Enum
 from itertools import accumulate
@@ -182,15 +182,21 @@ class SentenceResult:
 
 
 def add_sentences(
-    store: VocabStore, checker: SentenceChecker, sentences: list[SentenceToStore]
+    store: VocabStore,
+    checker: SentenceChecker,
+    sentences: list[SentenceToStore],
+    picked: Collection[str] | None = None,
 ) -> list[SentenceResult]:
     """Check example sentences with LanguageTool and store the ones that pass.
 
     A sentence that fails can be retried up to 3 times: the agent writes a new
     sentence with the same number. When the last retry fails too, the sentence
     goes on the list for the learner and takes no more tries.
+
+    `picked` holds the Base forms a Lesson picked; a sentence for any other
+    word is rejected. With None, any Unknown or Taught word takes sentences.
     """
-    sentences = _checked_input(store, sentences)
+    sentences = _checked_input(store, sentences, picked)
     results = []
     for item, problems in zip(sentences, checker.check([s.sentence for s in sentences])):
         if problems:
@@ -208,11 +214,14 @@ def add_sentences(
     return results
 
 
-def failed_sentences(store: VocabStore) -> list[SentenceResult]:
+def failed_sentences(
+    store: VocabStore, picked: Collection[str] | None = None
+) -> list[SentenceResult]:
     """The list for the learner: example sentences whose last try failed.
 
     A "listed" sentence failed all its retries. A "retry" sentence still has
-    retries left, but the agent stopped before it sent a new one.
+    retries left, but the agent stopped before it sent a new one. With
+    `picked`, only the sentences of these Base forms are listed.
     """
     return [
         _result(
@@ -221,6 +230,7 @@ def failed_sentences(store: VocabStore) -> list[SentenceResult]:
             failed.failures,
         )
         for failed in store.failed_sentences()
+        if picked is None or failed.base_form in picked
     ]
 
 
@@ -233,13 +243,20 @@ def _result(item: SentenceToStore, problems: list[str], failures: int) -> Senten
 
 
 def _checked_input(
-    store: VocabStore, sentences: list[SentenceToStore]
+    store: VocabStore,
+    sentences: list[SentenceToStore],
+    picked: Collection[str] | None,
 ) -> list[SentenceToStore]:
     """The sentences with outer spaces removed; ValueError if any one is bad."""
     seen = set()
     cleaned = []
     for item in sentences:
         name = f"Sentence {item.number} of {item.base_form!r}"
+        if picked is not None and item.base_form not in picked:
+            raise ValueError(
+                f"{item.base_form!r} is not a word the Lesson picked: write "
+                "sentences only for the words pick_lesson_words gives"
+            )
         if store.state_of(item.base_form) not in _TEACHABLE:
             raise ValueError(f"{item.base_form!r} is not an Unknown or Taught word")
         if item.number not in range(1, SENTENCES_PER_WORD + 1):

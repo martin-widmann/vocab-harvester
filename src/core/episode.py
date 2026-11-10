@@ -180,6 +180,68 @@ def find_episode(media_root: Path | str, name: str) -> Episode:
     return episode
 
 
+def match_episode(media_root: Path | str, request: str) -> str:
+    """The Episode name of the media folder, from how the learner names it.
+
+    "Dark S01E03", "dark s1e3" and "Dark/S01E03" all give "Dark/S01E03" (or
+    "Dark/S1E3" if that is the folder). "Der Film P2" gives "Der Film/P2". The
+    series or film name is matched without case. ValueError, with the names
+    that do exist, if there is no such Episode.
+    """
+    root = Path(media_root).resolve()
+    text = " ".join(request.replace("\\", "/").split())
+    match = _REQUEST.fullmatch(text)
+    title, code = (match.group("title"), match.group("code")) if match else (text, None)
+    title = title.strip(" /")
+    folders = _subfolders(root)
+    found = [folder for folder in folders if folder.name.casefold() == title.casefold()]
+    if not title or not found:
+        names = ", ".join(sorted(folder.name for folder in folders)) or "none"
+        raise ValueError(
+            f"No series or film {title!r} in the media folder {root}; it has: {names}"
+        )
+    folder = found[0]
+    if (folder / FILM_FILE).is_file():
+        episodes = film_episodes(folder)
+        if code is None or code.upper() not in episodes:
+            raise ValueError(
+                f"{folder.name} is a film: name one of its Episodes "
+                f"({', '.join(episodes)}), for example {folder.name}/P1"
+            )
+        return f"{folder.name}/{code.upper()}"
+    episodes = {
+        _code(sub.name): sub.name for sub in _subfolders(folder) if _code(sub.name)
+    }
+    wanted = _code(code) if code else None
+    if wanted is None or wanted not in episodes:
+        names = ", ".join(sorted(episodes.values())) or "none"
+        raise ValueError(
+            f"No Episode {request.strip()!r}: the Episodes of {folder.name} are {names}"
+        )
+    return f"{folder.name}/{episodes[wanted]}"
+
+
+_REQUEST = re.compile(
+    r"(?P<title>.+?)[ /]+(?P<code>S\d{1,2} ?E\d{1,3}|P\d)", re.IGNORECASE
+)
+_SERIES_CODE = re.compile(r"S(\d{1,2}) ?E(\d{1,3})", re.IGNORECASE)
+
+
+def _code(name: str) -> tuple[int, int] | None:
+    """Season and episode number of a code such as "S01E03" or "s1e3"."""
+    match = _SERIES_CODE.fullmatch(name)
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def _subfolders(folder: Path) -> list[Path]:
+    if not folder.is_dir():
+        return []
+    return [
+        path for path in folder.iterdir()
+        if path.is_dir() and not path.name.startswith(".")
+    ]
+
+
 def episode_key(media_root: Path | str, name: str) -> str:
     """One key per Episode, however its name is written: "Dark/S01E03"."""
     root = Path(media_root).resolve()

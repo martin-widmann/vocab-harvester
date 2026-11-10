@@ -321,6 +321,7 @@ def test_add_sentences_tool_stores_the_sentences_languagetool_passes(toolbox, db
     results = toolbox.call(
         "add_sentences",
         {
+            "episode": "Dark/S01E01",
             "sentences": [
                 {"base_form": "aufgeben", "number": 1, "sentence": "Er gibt nie auf."},
                 {"base_form": "aufgeben", "number": 2, "sentence": "Das ist falsch."},
@@ -354,10 +355,10 @@ def test_failed_sentences_tool_gives_the_list_for_the_learner(toolbox, db):
     for _ in range(4):
         toolbox.call(
             "add_sentences",
-            {"sentences": [{"base_form": "aufgeben", "number": 3, "sentence": "falsch"}]},
+            {"episode": "Dark/S01E01", "sentences": [{"base_form": "aufgeben", "number": 3, "sentence": "falsch"}]},
         )
 
-    assert toolbox.call("failed_sentences", {}) == [
+    assert toolbox.call("failed_sentences", {"episode": "Dark/S01E01"}) == [
         {
             "base_form": "aufgeben",
             "number": 3,
@@ -376,15 +377,15 @@ def test_add_sentences_tool_needs_a_whole_number(toolbox, db, number):
     with pytest.raises(ToolError, match="integer"):
         toolbox.call(
             "add_sentences",
-            {"sentences": [{"base_form": "aufgeben", "number": number, "sentence": "Gut."}]},
+            {"episode": "Dark/S01E01", "sentences": [{"base_form": "aufgeben", "number": number, "sentence": "Gut."}]},
         )
 
 
 def test_add_sentences_tool_for_a_word_that_is_not_unknown_is_a_tool_error(toolbox):
-    with pytest.raises(ToolError, match="not an Unknown or Taught word"):
+    with pytest.raises(ToolError, match="not a word the Lesson picked"):
         toolbox.call(
             "add_sentences",
-            {"sentences": [{"base_form": "Polizei", "number": 1, "sentence": "Gut."}]},
+            {"episode": "Dark/S01E01", "sentences": [{"base_form": "Polizei", "number": 1, "sentence": "Gut."}]},
         )
 
 
@@ -401,7 +402,7 @@ def test_add_sentences_tool_when_languagetool_fails_is_a_tool_error(
     with pytest.raises(ToolError, match="cannot be reached"):
         toolbox.call(
             "add_sentences",
-            {"sentences": [{"base_form": "aufgeben", "number": 1, "sentence": "Gut."}]},
+            {"episode": "Dark/S01E01", "sentences": [{"base_form": "aufgeben", "number": 1, "sentence": "Gut."}]},
         )
     assert VocabStore(db).example_sentences("aufgeben") == {}
 
@@ -573,6 +574,7 @@ def ready_for_the_lesson(toolbox, db):
     toolbox.call(
         "add_sentences",
         {
+            "episode": "Dark/S01E01",
             "sentences": [
                 {"base_form": "aufgeben", "number": n, "sentence": f"Sie gibt nie auf, Satz {n}."}
                 for n in (1, 2, 3)
@@ -740,3 +742,140 @@ def test_the_write_lesson_schema_offers_the_open_exercise_kinds(toolbox):
     assert exercise["properties"]["kind"]["enum"] == [
         "gap", "choice", "sentence", "translate", "explain",
     ]
+
+
+@pytest.mark.parametrize("name", ["Dark S01E01", "dark s1e1", "Dark/S01E01"])
+def test_find_episode_tool_gives_the_episode_name_of_the_media_folder(toolbox, name):
+    assert toolbox.call("find_episode", {"name": name}) == {
+        "episode": "Dark/S01E01",
+        "lesson": None,
+    }
+
+
+def test_find_episode_tool_gives_the_lesson_an_episode_already_has(toolbox, db):
+    ready_for_the_lesson(toolbox, db)
+    toolbox.call("write_lesson", {"episode": "Dark/S01E01", "grammar": LESSON_GRAMMAR})
+
+    assert toolbox.call("find_episode", {"name": "Dark S01E01"})["lesson"] == 1
+
+
+def test_find_episode_tool_for_a_missing_episode_names_the_episodes_there_are(toolbox):
+    with pytest.raises(ToolError, match="S01E01, S01E02"):
+        toolbox.call("find_episode", {"name": "Dark S09E09"})
+
+
+def test_wait_for_check_tool_is_done_when_every_new_word_is_marked(toolbox, db):
+    with closing(VocabStore(db)) as store:
+        for word in toolbox.call("new_words", {"episode": "Dark/S01E01"}):
+            store.add(word["base_form"], word["word_type"], WordState.KNOWN)
+
+    assert toolbox.call("wait_for_check", {"episode": "Dark/S01E01"}) == {
+        "done": True,
+        "checked": 0,
+        "left": 0,
+    }
+
+
+def test_wait_for_check_tool_stops_waiting_with_the_words_left(toolbox):
+    left = len(toolbox.call("new_words", {"episode": "Dark/S01E01"}))
+
+    assert toolbox.call("wait_for_check", {"episode": "Dark/S01E01"}) == {
+        "done": False,
+        "checked": 0,
+        "left": left,
+    }
+
+
+def test_add_sentences_tool_rejects_an_unknown_word_the_lesson_did_not_pick(toolbox, db):
+    with closing(VocabStore(db)) as store:
+        store.add("Hund", "NOUN", WordState.UNKNOWN)
+
+    with pytest.raises(ToolError, match="'Hund' is not a word the Lesson picked"):
+        toolbox.call(
+            "add_sentences",
+            {
+                "episode": "Dark/S01E01",
+                "sentences": [{"base_form": "Hund", "number": 1, "sentence": "Der Hund bellt."}],
+            },
+        )
+
+
+def fail_four_times(toolbox, episode, base_form, number):
+    for _ in range(4):
+        toolbox.call(
+            "add_sentences",
+            {
+                "episode": episode,
+                "sentences": [{"base_form": base_form, "number": number, "sentence": "falsch"}],
+            },
+        )
+
+
+def test_failed_sentences_tool_lists_only_the_words_of_the_episode(toolbox, db):
+    with closing(VocabStore(db)) as store:
+        store.add("suchen", "VERB", WordState.UNKNOWN)
+        store.add("warten", "VERB", WordState.UNKNOWN)
+    fail_four_times(toolbox, "Dark/S01E01", "suchen", 1)
+    fail_four_times(toolbox, "Dark/S01E02", "warten", 1)
+
+    listed = toolbox.call("failed_sentences", {"episode": "Dark/S01E02"})
+
+    assert [(failed["base_form"], failed["status"]) for failed in listed] == [
+        ("warten", "listed")
+    ]
+
+
+def test_the_lesson_flow_runs_from_the_episode_name_to_the_tagged_subtitles(
+    toolbox, db, media, page
+):
+    # The tutor finds the Episode and processes it.
+    episode = toolbox.call("find_episode", {"name": "dark s01e01"})["episode"]
+    words = toolbox.call("new_words", {"episode": episode})
+    toolbox.call("open_page", {"episode": episode})
+    # The learner does the Word Knowledge Check on the page.
+    unknown = {"aufgeben", "Höhle"}
+    with closing(VocabStore(db)) as store:
+        for word in words:
+            state = WordState.UNKNOWN if word["base_form"] in unknown else WordState.KNOWN
+            store.add(word["base_form"], word["word_type"], state)
+    assert toolbox.call("wait_for_check", {"episode": episode})["done"] is True
+    # The Lesson words, their sentences (one fails all its tries) and topics.
+    picked = toolbox.call("pick_lesson_words", {"episode": episode})
+    assert {word["base_form"] for word in picked} == unknown
+    toolbox.call(
+        "add_sentences",
+        {
+            "episode": episode,
+            "sentences": [
+                {"base_form": word, "number": n, "sentence": f"Das ist gut, Satz {n}."}
+                for word in sorted(unknown)
+                for n in (1, 2)
+            ]
+            + [{"base_form": "aufgeben", "number": 3, "sentence": "Sie gibt nie auf."}],
+        },
+    )
+    fail_four_times(toolbox, episode, "Höhle", 3)
+    approve(db, toolbox.call("propose_curriculum", {"topics": TOPICS})["number"])
+    with closing(Curriculum(db)) as curriculum:
+        curriculum.review("dativ", passed=False)
+    toolbox.call(
+        "report_topics",
+        {
+            "episode": episode,
+            "topics": [
+                {"topic_id": "dativ", "lines": [2]},
+                {"topic_id": "konjunktiv-1", "lines": [3]},
+            ],
+        },
+    )
+    written = toolbox.call("write_lesson", {"episode": episode, "grammar": LESSON_GRAMMAR})
+
+    assert page.opened == ["Dark/S01E01"]
+    assert sorted(written["sections"][0]["words"]) == ["Höhle", "aufgeben"]
+    tagged = read_lines(media / "Dark" / "S01E01" / written["tagged_subtitles"])
+    assert "[aufgeben]" in tagged[2].text
+    # At the end the learner sees the sentence that failed all its tries.
+    assert [
+        (failed["base_form"], failed["number"], failed["status"])
+        for failed in toolbox.call("failed_sentences", {"episode": episode})
+    ] == [("Höhle", 3, "listed")]

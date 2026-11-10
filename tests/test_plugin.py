@@ -126,11 +126,43 @@ def test_the_topic_finder_reports_topics_and_stores_exercises_only_through_tools
     assert tools <= {mcp_tool(name) for name in TOOL_NAMES}
 
 
-def test_the_lesson_skill_opens_the_page_with_the_open_page_tool():
-    skill = ROOT / "skills" / "lesson" / "SKILL.md"
+LESSON_SKILL = ROOT / "skills" / "lesson" / "SKILL.md"
 
-    assert frontmatter(skill)["name"] == "lesson"
-    assert f"mcp__plugin_{PLUGIN}_learning__open_page" in skill.read_text("utf-8")
+
+def test_the_lesson_skill_opens_the_page_with_the_open_page_tool():
+    assert frontmatter(LESSON_SKILL)["name"] == "lesson"
+    assert mcp_tool("open_page") in LESSON_SKILL.read_text("utf-8")
+
+
+def test_the_lesson_skill_runs_the_whole_flow_in_pipeline_order():
+    # process -> Word Knowledge Check -> pick words -> sentences -> topics ->
+    # Lesson and Tags (the topic-finder writes both) -> failed sentences.
+    text = LESSON_SKILL.read_text("utf-8")
+    steps = [
+        mcp_tool("find_episode"),
+        mcp_tool("new_words"),
+        mcp_tool("open_page"),
+        mcp_tool("wait_for_check"),
+        mcp_tool("pick_lesson_words"),
+        f"{PLUGIN}:sentence-writer",
+        f"{PLUGIN}:topic-finder",
+        mcp_tool("failed_sentences"),
+    ]
+
+    position = 0
+    for step in steps:
+        position = text.find(step, position)
+        assert position != -1, f"{step} is missing or out of order"
+
+
+def test_the_tutor_has_the_lesson_skill_loaded():
+    assert frontmatter(ROOT / "agents" / "tutor.md")["skills"] == f"{PLUGIN}:lesson"
+
+
+def test_the_lesson_skill_uses_only_tools_the_tutor_has():
+    named = set(re.findall(rf"mcp__plugin_{PLUGIN}_learning__(\w+)", LESSON_SKILL.read_text("utf-8")))
+
+    assert {mcp_tool(name) for name in named} <= tools_of("tutor")
 
 
 def test_there_is_a_grader_agent_that_the_grader_runner_starts():

@@ -32,10 +32,12 @@ from core import (
     episode_lines,
     failed_sentences,
     find_episode,
+    match_episode,
     new_words,
     pick_lesson_words,
     report_topics,
     tagged_subtitles_path,
+    wait_for_check,
     write_lesson,
 )
 from core.frequency import DEFAULT_FREQUENCY
@@ -214,13 +216,30 @@ class Toolbox:
         self._facts_path = Path(facts_path)
         self._frequency_path = Path(frequency_path)
         self._page = page
+        self._clock = clock or SystemClock()
         # One checker for the whole session, so the rate limit holds across calls.
-        self._checker = SentenceChecker(
-            language_tool or LanguageTool(), clock or SystemClock()
-        )
+        self._checker = SentenceChecker(language_tool or LanguageTool(), self._clock)
         self.tools = {
             tool.name: tool
             for tool in [
+                Tool(
+                    "find_episode",
+                    "Find an Episode from how the learner names it, for example "
+                    '"Dark S01E03", "dark s1e3" or "Der Film P2". The result '
+                    'gives its Episode name in the media folder ("Dark/S01E03") '
+                    "for all other tools, and the number of its Lesson, or null "
+                    "if it has no Lesson yet. If there is no such Episode, the "
+                    "error names the series, films or Episodes there are.",
+                    {
+                        "name": {
+                            "type": "string",
+                            "description": "The series or film name and the "
+                            'Episode code, for example "Dark S01E03" or '
+                            '"Der Film P2".',
+                        }
+                    },
+                    self._find_episode,
+                ),
                 Tool(
                     "parse_subtitles",
                     "Read the .srt file of an Episode into Lines: number, "
@@ -255,6 +274,16 @@ class Toolbox:
                     "type), in the order they are first heard.",
                     {"episode": _EPISODE},
                     self._new_words,
+                ),
+                Tool(
+                    "wait_for_check",
+                    "Wait while the learner does the Word Knowledge Check of "
+                    "an Episode on the Check tab. It returns when every New "
+                    "word is marked (done is true), or after 5 minutes with "
+                    "done false: then call it again. checked counts the words "
+                    "marked during this wait, left the New words not marked yet.",
+                    {"episode": _EPISODE},
+                    self._wait_for_check,
                 ),
                 Tool(
                     "word_facts",
@@ -305,8 +334,10 @@ class Toolbox:
                 ),
                 Tool(
                     "add_sentences",
-                    "Store example sentences for Unknown or Taught words: "
-                    "sentence 1, 2 and 3 of each Base form. LanguageTool checks "
+                    "Store example sentences for the words the Lesson of an "
+                    "Episode picked (pick_lesson_words): sentence 1, 2 and 3 "
+                    "of each Base form. A sentence for any other word is "
+                    "rejected. LanguageTool checks "
                     "every sentence first; only a sentence with no problems is "
                     "stored. Send all sentences in one call. Each result has a "
                     'status: "stored"; "retry" (it failed: write a new sentence '
@@ -315,6 +346,7 @@ class Toolbox:
                     "the list for the learner; it takes no more tries). "
                     "problems gives what LanguageTool found.",
                     {
+                        "episode": _EPISODE,
                         "sentences": {
                             "type": "array",
                             "items": _SENTENCE,
@@ -326,12 +358,13 @@ class Toolbox:
                 ),
                 Tool(
                     "failed_sentences",
-                    "Give the list for the learner: example sentences whose "
-                    "last LanguageTool check failed, with the problems found. "
+                    "Give the list for the learner: example sentences of the "
+                    "words the Lesson of an Episode picked, whose last "
+                    "LanguageTool check failed, with the problems found. "
                     'Status "listed": it failed all its retries. Status '
                     '"retry": it has retries left, but no new sentence was sent. '
                     "None of them is stored.",
-                    {},
+                    {"episode": _EPISODE},
                     self._failed_sentences,
                 ),
                 Tool(
@@ -522,6 +555,12 @@ class Toolbox:
     def _episode(self, name: str) -> Episode:
         return find_episode(self._media_root, name)
 
+    def _find_episode(self, name: str) -> dict:
+        key = match_episode(self._media_root, name)
+        self._episode(key)
+        lesson = LessonFiles.next_to(self._db_path).of_episode(key)
+        return {"episode": key, "lesson": lesson and lesson["number"]}
+
     def _parse_subtitles(self, episode: str) -> list[dict]:
         return [
             _line(line) for line in episode_lines(self._episode(episode))
@@ -539,6 +578,11 @@ class Toolbox:
         with closing(VocabStore(self._db_path)) as store:
             return [asdict(word) for word in new_words(self._episode(episode), store)]
 
+    def _wait_for_check(self, episode: str) -> dict:
+        folder = self._episode(episode)
+        with closing(VocabStore(self._db_path)) as store:
+            return asdict(wait_for_check(folder, store, self._clock))
+
     def _word_facts(self, words: list[dict]) -> list[dict]:
         with closing(WordFacts(self._facts_path)) as facts:
             return [
@@ -551,13 +595,20 @@ class Toolbox:
             facts.add_meaning(base_form, meaning)
             return asdict(facts.lookup(base_form))
 
-    def _pick_lesson_words(self, episode: str) -> list[dict]:
+    def _picked(self, episode: str) -> set[str]:
+        """The Base forms the Lesson of an Episode picks."""
+        return {word.base_form for word in self._lesson_words(episode)}
+
+    def _lesson_words(self, episode: str) -> list:
         folder = self._episode(episode)
         with (
             closing(FrequencyTable(self._frequency_path)) as frequency,
             closing(VocabStore(self._db_path)) as store,
         ):
-            words = pick_lesson_words(folder, store, frequency)
+            return pick_lesson_words(folder, store, frequency)
+
+    def _pick_lesson_words(self, episode: str) -> list[dict]:
+        words = self._lesson_words(episode)
         return [
             {
                 "base_form": word.base_form,
@@ -570,18 +621,21 @@ class Toolbox:
             for word in words
         ]
 
-    def _add_sentences(self, sentences: list[dict]) -> list[dict]:
+    def _add_sentences(self, episode: str, sentences: list[dict]) -> list[dict]:
+        picked = self._picked(episode)
         with closing(VocabStore(self._db_path)) as store:
             results = add_sentences(
                 store,
                 self._checker,
                 [SentenceToStore(**sentence) for sentence in sentences],
+                picked=picked,
             )
         return [asdict(result) for result in results]
 
-    def _failed_sentences(self) -> list[dict]:
+    def _failed_sentences(self, episode: str) -> list[dict]:
+        picked = self._picked(episode)
         with closing(VocabStore(self._db_path)) as store:
-            return [asdict(failed) for failed in failed_sentences(store)]
+            return [asdict(failed) for failed in failed_sentences(store, picked)]
 
     def _curriculum(self) -> dict:
         with closing(Curriculum(self._db_path)) as curriculum:
